@@ -68,6 +68,23 @@ def detect_fraud(
             severity="HIGH",
         ))
 
+    # document-integrity signals from extracted content (populated by perception /
+    # extraction for real uploads; empty for the structured eval inputs).
+    alterations = [a for d in submission.documents for a in (d.content or {}).get("alterations", [])]
+    if alterations:
+        signals.append(FraudSignal(
+            code="DOCUMENT_ALTERATION",
+            detail="Altered/overwritten amount(s): " + "; ".join(alterations),
+            severity="HIGH",
+        ))
+    stamps = [s for d in submission.documents for s in (d.content or {}).get("duplicate_stamps", [])]
+    if stamps:
+        signals.append(FraudSignal(
+            code="DUPLICATE_STAMP",
+            detail="Duplicate document stamp(s): " + "; ".join(stamps),
+            severity="MEDIUM",
+        ))
+
     status = StepStatus.WARN if signals else StepStatus.PASS
     trace.add(
         "fraud.detection",

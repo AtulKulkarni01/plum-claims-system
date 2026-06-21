@@ -26,6 +26,7 @@ from ..models import (
     StepStatus,
 )
 from ..trace import Trace
+from ..validation import expand_shorthand, validate_registration
 
 
 def _line_items(raw: Any) -> list[LineItem]:
@@ -39,14 +40,16 @@ def _line_items(raw: Any) -> list[LineItem]:
 
 
 def _from_content(doc: InputDocument, content: dict[str, Any], source: str) -> ExtractedDocument:
+    registration = content.get("doctor_registration")
     return ExtractedDocument(
         file_id=doc.file_id,
         doc_type=doc.actual_type,
         source=source,
         patient_name=content.get("patient_name") or doc.patient_name_on_doc,
         doctor_name=content.get("doctor_name"),
-        doctor_registration=content.get("doctor_registration"),
-        diagnosis=content.get("diagnosis"),
+        doctor_registration=registration,
+        registration_valid=validate_registration(registration) if registration else None,
+        diagnosis=expand_shorthand(content.get("diagnosis")),
         treatment=content.get("treatment"),
         hospital_name=content.get("hospital_name"),
         line_items=_line_items(content.get("line_items")),
@@ -55,6 +58,9 @@ def _from_content(doc: InputDocument, content: dict[str, Any], source: str) -> E
         medicines=list(content.get("medicines", []) or []),
         date=content.get("date"),
         warnings=list(content.get("unreadable_fields", []) or []),
+        low_confidence_fields=list(content.get("low_confidence_fields", []) or []),
+        alterations=list(content.get("alterations", []) or []),
+        duplicate_stamps=list(content.get("duplicate_stamps", []) or []),
     )
 
 
@@ -74,7 +80,8 @@ async def _extract_one(doc: InputDocument) -> ExtractedDocument:
     # (Gemini primary, OpenAI fallback, with retry/backoff inside extract_fields).
     if (raw or doc.image_base64) and llm_available():
         res = await extract_fields(  # may raise ExtractionError (all providers down)
-            doc.actual_type.value, raw_text=raw, image_base64=doc.image_base64
+            doc.actual_type.value, raw_text=raw, image_base64=doc.image_base64,
+            mime_type=doc.mime_type,
         )
         ed = _from_content(doc, res.fields, f"LLM:{res.provider}")
         ed.warnings.extend(res.attempts)  # record any retries / failovers
@@ -161,4 +168,37 @@ async def extract_claim(
         # quietly back a high-confidence decision.
         confidence_delta=-0.1 * len(degraded),
     )
+
+    # registration validity (data-quality flag, not fraud)
+    if merged.doctor_registration and not validate_registration(merged.doctor_registration):
+        trace.add("extraction.registration", StepStatus.WARN,
+                  f"Doctor registration '{merged.doctor_registration}' is not a recognized format",
+                  {"registration": merged.doctor_registration}, confidence_delta=-0.05)
+
+    # fields read but partly obscured (e.g. stamped over) — flagged, not dropped
+    low_conf = sorted({f for d in docs for f in d.low_confidence_fields})
+    if low_conf:
+        trace.add("extraction.low_confidence", StepStatus.WARN,
+                  f"Low-confidence field(s): {', '.join(low_conf)}",
+                  {"fields": low_conf}, confidence_delta=-0.05)
+
+    # integrity markers noted here AND surfaced to fraud detection
+    integrity = {
+        "alterations": sorted({a for d in docs for a in d.alterations}),
+        "duplicate_stamps": sorted({s for d in docs for s in d.duplicate_stamps}),
+    }
+    if integrity["alterations"] or integrity["duplicate_stamps"]:
+        trace.add("extraction.integrity", StepStatus.WARN,
+                  "Document integrity markers found", integrity)
+
+    # #2 cross-field check: the bill total should equal the sum of its line items
+    if merged.line_items and merged.total is not None:
+        items_sum = round(sum(li.amount for li in merged.line_items), 2)
+        if abs(items_sum - merged.total) > 1.0:
+            trace.add("extraction.cross_check", StepStatus.WARN,
+                      f"Total ₹{merged.total:,.0f} does not match line-item sum "
+                      f"₹{items_sum:,.0f} — possible misread or alteration",
+                      {"total": merged.total, "line_items_sum": items_sum},
+                      confidence_delta=-0.1)
+
     return merged

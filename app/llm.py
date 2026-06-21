@@ -63,6 +63,9 @@ class _Fields(BaseModel):
     medicines: list[str] = []
     unreadable_fields: list[str] = []
     legible: bool = True
+    low_confidence_fields: list[str] = []
+    alterations: list[str] = []
+    duplicate_stamps: list[str] = []
 
 
 _PROMPT = (
@@ -72,14 +75,20 @@ _PROMPT = (
     "Diabetes). For a bill, capture every line item as {{description, amount}} and "
     "the total. List any field you genuinely cannot read in `unreadable_fields` "
     "rather than guessing. Set legible=false if the document is too blurry or "
-    "low-quality to read reliably."
+    "low-quality to read reliably. If a field is in a regional language "
+    "(Hindi/Tamil/Telugu), extract any English content and list the regional-only "
+    "fields in `unreadable_fields`. If a stamp/overprint partly obscures a field, "
+    "give your best reading and list that field in `low_confidence_fields`. List "
+    "any crossed-out, overwritten or corrected amount in `alterations`, and any "
+    "repeated ORIGINAL/DUPLICATE stamps in `duplicate_stamps`."
 )
 
 _JSON_HINT = (
     " Respond ONLY with a JSON object with keys: patient_name, doctor_name, "
     "doctor_registration, diagnosis, treatment, hospital_name, total, date, "
     "line_items (array of {description, amount}), tests_ordered (array), "
-    "medicines (array), unreadable_fields (array), legible (boolean)."
+    "medicines (array), unreadable_fields (array), legible (boolean), "
+    "low_confidence_fields (array), alterations (array), duplicate_stamps (array)."
 )
 
 
@@ -121,7 +130,8 @@ def parse_json_fields(raw_text: str) -> Optional[dict[str, Any]]:
 # of fields, or raises ExtractionError. Imports are lazy so the SDKs are optional.
 # --------------------------------------------------------------------------- #
 async def _gemini_extract(
-    doc_type: str, raw_text: Optional[str], image_base64: Optional[str]
+    doc_type: str, raw_text: Optional[str], image_base64: Optional[str],
+    mime_type: Optional[str],
 ) -> dict[str, Any]:
     if not _gemini_key():
         raise ExtractionError("GEMINI_API_KEY not set")
@@ -136,8 +146,10 @@ async def _gemini_extract(
     if raw_text:
         parts.append(f"\n\nDOCUMENT TEXT:\n{raw_text}")
     if image_base64:
+        # Gemini reads multi-page PDFs natively in one call, covering the
+        # "multi-page bill -> aggregate line items" requirement.
         parts.append(types.Part.from_bytes(
-            data=_decode_image(image_base64), mime_type="image/jpeg"))
+            data=_decode_image(image_base64), mime_type=mime_type or "image/jpeg"))
     try:
         resp = await client.aio.models.generate_content(
             model=GEMINI_MODEL,
@@ -156,7 +168,8 @@ async def _gemini_extract(
 
 
 async def _openai_extract(
-    doc_type: str, raw_text: Optional[str], image_base64: Optional[str]
+    doc_type: str, raw_text: Optional[str], image_base64: Optional[str],
+    mime_type: Optional[str],
 ) -> dict[str, Any]:
     if not _openai_key():
         raise ExtractionError("OPENAI_API_KEY not set")
@@ -174,7 +187,7 @@ async def _openai_extract(
     if image_base64:
         content.append({
             "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
+            "image_url": {"url": f"data:{mime_type or 'image/jpeg'};base64,{image_base64}"},
         })
     try:
         resp = await client.chat.completions.create(
@@ -205,7 +218,9 @@ def _validate(text: str) -> dict[str, Any]:
         raise ExtractionError(f"LLM output failed validation: {exc}") from exc
 
 
-ProviderFn = Callable[[str, Optional[str], Optional[str]], Awaitable[dict[str, Any]]]
+ProviderFn = Callable[
+    [str, Optional[str], Optional[str], Optional[str]], Awaitable[dict[str, Any]]
+]
 
 
 def _provider_chain() -> list[tuple[str, ProviderFn]]:
@@ -222,6 +237,7 @@ async def extract_fields(
     doc_type: str,
     raw_text: Optional[str] = None,
     image_base64: Optional[str] = None,
+    mime_type: Optional[str] = None,
 ) -> ExtractionResult:
     """Extract fields, failing over across providers with backoff.
 
@@ -238,7 +254,7 @@ async def extract_fields(
     for name, fn in chain:
         for attempt in range(_MAX_RETRIES):
             try:
-                fields = await fn(doc_type, raw_text, image_base64)
+                fields = await fn(doc_type, raw_text, image_base64, mime_type)
                 return ExtractionResult(fields=fields, provider=name, attempts=attempts)
             except ExtractionError as exc:
                 attempts.append(f"{name} attempt {attempt + 1}/{_MAX_RETRIES} failed: {exc}")

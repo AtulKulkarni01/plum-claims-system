@@ -176,8 +176,8 @@
       </div>
       <div class="label">Hospital (optional)</div>
       <input id="u_hospital" class="u-in" placeholder="e.g. Apollo Hospitals">
-      <div class="label">Documents (images)</div>
-      <input id="u_files" class="u-in" type="file" accept="image/*" multiple>
+      <div class="label">Documents (images or PDF)</div>
+      <input id="u_files" class="u-in" type="file" accept="image/*,application/pdf" multiple>
       <div id="u_rows"></div>
       <button class="run" id="uploadBtn">Read &amp; adjudicate →</button>
       <div class="u-note" id="u_note"></div>
@@ -277,7 +277,8 @@ $('#uploadBtn').addEventListener('click', async () => {
   for (let i = 0; i < files.length; i++) {
     const b64 = await fileToB64(files[i]);
     docs.push({ file_id: `U${i+1}`, file_name: files[i].name,
-                actual_type: document.querySelector(`#u_type_${i}`).value, image_base64: b64 });
+                actual_type: document.querySelector(`#u_type_${i}`).value,
+                image_base64: b64, mime_type: files[i].type || 'image/jpeg' });
   }
   const payload = {
     member_id: member, policy_id: 'PLUM_GHI_2024',

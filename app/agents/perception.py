@@ -32,7 +32,8 @@ async def perceive(submission: ClaimSubmission, trace: Trace) -> None:
     async def _read(doc) -> None:
         try:
             res = await extract_fields(
-                doc.actual_type.value, raw_text=doc.text, image_base64=doc.image_base64
+                doc.actual_type.value, raw_text=doc.text,
+                image_base64=doc.image_base64, mime_type=doc.mime_type,
             )
         except ExtractionError as exc:
             # Could not read it at all -> treat as unreadable so the gate asks the

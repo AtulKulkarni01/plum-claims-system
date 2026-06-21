@@ -67,10 +67,10 @@ def test_failover_gemini_to_openai(monkeypatch):
     monkeypatch.setattr(llm, "_BACKOFF_BASE", 0.0)  # no real sleeps in tests
     monkeypatch.setattr(llm, "_MAX_RETRIES", 2)
 
-    async def gemini_down(doc_type, raw, img):
+    async def gemini_down(doc_type, raw, img, mime=None):
         raise ExtractionError("rate limited")
 
-    async def openai_ok(doc_type, raw, img):
+    async def openai_ok(doc_type, raw, img, mime=None):
         return {"diagnosis": "Viral Fever", "total": 500}
 
     monkeypatch.setattr(llm, "_provider_chain",
@@ -87,7 +87,7 @@ def test_all_providers_failing_raises(monkeypatch):
     monkeypatch.setattr(llm, "_BACKOFF_BASE", 0.0)
     monkeypatch.setattr(llm, "_MAX_RETRIES", 1)
 
-    async def down(doc_type, raw, img):
+    async def down(doc_type, raw, img, mime=None):
         raise ExtractionError("provider down")
 
     monkeypatch.setattr(llm, "_provider_chain",
@@ -98,7 +98,7 @@ def test_all_providers_failing_raises(monkeypatch):
 
 def test_extraction_records_provider_and_failover_in_trace(monkeypatch):
     """The agent surfaces which provider was used (and any failover) in the trace."""
-    async def fake_extract(doc_type, raw_text=None, image_base64=None):
+    async def fake_extract(doc_type, raw_text=None, image_base64=None, mime_type=None):
         return ExtractionResult(
             fields={"diagnosis": "Dengue", "total": 700},
             provider="openai",
