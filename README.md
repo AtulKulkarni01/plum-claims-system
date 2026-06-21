@@ -67,7 +67,8 @@ ClaimResult (+ full trace)
 
 - **Documentation:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) ·
   [`docs/COMPONENT_CONTRACTS.md`](docs/COMPONENT_CONTRACTS.md) ·
-  [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md)
+  [`docs/EVAL_REPORT.md`](docs/EVAL_REPORT.md) ·
+  [`docs/DEPLOY.md`](docs/DEPLOY.md) · [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)
 - **Policy rules** are read from [`policy_terms.json`](policy_terms.json) — nothing is hardcoded.
 - **Observability:** every decision carries an ordered `trace`; confidence is
   literally `0.95 + Σ(confidence deltas)` from those same trace steps.

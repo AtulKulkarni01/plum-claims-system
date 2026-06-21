@@ -241,6 +241,20 @@ function render(r) {
       <div class="issue"><div class="code">${s.code} · ${s.severity}</div><div>${esc(s.detail)}</div></div>`).join('')}</div>`;
   }
 
+  const ex = r.extracted;
+  if (ex) {
+    const rows = [
+      ['Patient', ex.patient_name], ['Diagnosis', ex.diagnosis],
+      ['Treatment', ex.treatment], ['Hospital', ex.hospital_name],
+      ['Doctor reg.', ex.doctor_registration],
+      ['Tests', (ex.tests_ordered||[]).join(', ')],
+      ['Extracted total', ex.total != null ? money(ex.total, cur) : null],
+    ].filter(([, v]) => v);
+    const srcs = (ex.documents||[]).map(d => `${d.file_id}:${d.source}`).join('  ');
+    html += `<div class="card"><h3>Extracted data · sources ${esc(srcs)}</h3>
+      <table>${rows.map(([k,v])=>`<tr><th style="width:140px">${k}</th><td>${esc(v)}</td></tr>`).join('')}</table></div>`;
+  }
+
   html += `<div class="card"><h3>Decision trace · ${r.trace.length} steps</h3><div class="trace">
     ${r.trace.map(s=>`<div class="tstep">
       <span class="dot d-${s.status}"></span>
