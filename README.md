@@ -102,14 +102,14 @@ tests/                 54 tests (unit + integration + full eval)
 
 ---
 
-## Optional: LLM extraction for raw documents (Google Gemini 2.0 Flash)
+## Optional: LLM extraction for raw documents (Google Gemini 2.5 Flash)
 
 The eval harness supplies structured `content` for each document, so the LLM is
 not exercised by the test cases. For a *real* unstructured document (raw text or
 an image), set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) and the extraction agent
-calls **Gemini 2.0 Flash** with a constrained JSON `response_schema`, re-validates
+calls **Gemini 2.5 Flash** with a constrained JSON `response_schema`, re-validates
 the result with Pydantic, and falls back to a degraded-but-non-crashing path on
-any failure. Gemini 2.0 Flash is chosen for lowest latency/cost at claim volume
+any failure. Gemini 2.5 Flash is chosen for lowest latency/cost at claim volume
 with strong vision + native structured output. The adapter is provider-agnostic
 (`extract_fields`), so swapping models is a one-file change. See
 [`app/llm.py`](app/llm.py) and `docs/ARCHITECTURE.md` §6.
