@@ -1,4 +1,4 @@
-"""Trace accumulator — the backbone of observability.
+"""Trace accumulator
 
 Every agent appends steps here. The orchestrator owns one instance per claim and
 attaches the finished list to the result, so any decision can be reconstructed

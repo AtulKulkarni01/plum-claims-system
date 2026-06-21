@@ -140,13 +140,13 @@ keep the core simple):
   would make the system non-deterministic and un-runnable without secrets. It is
   an *optional* adapter (`llm.py`) instead.
 
-## 7. Limitations and the path to 10× load
+## 7. Limitations and the path to 10x load
 
-Current design is a single stateless FastAPI process. At 10× (≈750k claims/yr,
+Current design is a single stateless FastAPI process. At 10x (≈750k claims/yr,
 bursty), the bottleneck is document extraction (LLM/OCR latency), not the rule
 engine.
 
-| Concern | Now | At 10× |
+| Concern | Now | At 10x |
 |---------|-----|--------|
 | Throughput | one process, async I/O | horizontal scale behind a load balancer; the pipeline is stateless so this is trivial |
 | Extraction latency | inline, async per-doc | move to a queue (SQS/Celery): submit → ack → extract+adjudicate async → notify; cache extractions by document content-hash |

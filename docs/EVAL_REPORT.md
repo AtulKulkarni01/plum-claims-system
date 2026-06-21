@@ -29,9 +29,9 @@ _Member submits two prescriptions for a consultation claim that requires a presc
 - **Confidence:** 0.95
 - **Reasons:** —
 - **Requires manual review:** False
-- **Member message:** For a consultation claim we need: prescription, hospital bill. You uploaded 2× prescription. Missing: hospital bill. Please upload the following document(s): hospital bill.
+- **Member message:** For a consultation claim we need: prescription, hospital bill. You uploaded 2x prescription. Missing: hospital bill. Please upload the following document(s): hospital bill.
 - **Document issues:**
-    - `MISSING_REQUIRED_DOCUMENT` For a consultation claim we need: prescription, hospital bill. You uploaded 2× prescription. Missing: hospital bill. → Please upload the following document(s): hospital bill.
+    - `MISSING_REQUIRED_DOCUMENT` For a consultation claim we need: prescription, hospital bill. You uploaded 2x prescription. Missing: hospital bill. → Please upload the following document(s): hospital bill.
 - **Trace:**
     - [PASS] `intake.member` — Member resolved: Rajesh Kumar (EMP001)
     - [FAIL] `document_verification.required_types` — Missing required document(s): hospital bill

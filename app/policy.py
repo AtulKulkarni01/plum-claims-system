@@ -28,14 +28,13 @@ class Policy:
         self._raw = raw
         self._members_by_id = {m["member_id"]: m for m in raw.get("members", [])}
 
-    # -- construction ------------------------------------------------------- #
+    
     @classmethod
     def from_file(cls, path: str | Path | None = None) -> "Policy":
         path = Path(path or os.environ.get("CLAIMS_POLICY_PATH", _DEFAULT_POLICY_PATH))
         with open(path, "r", encoding="utf-8") as fh:
             return cls(json.load(fh))
 
-    # -- identity ----------------------------------------------------------- #
     @property
     def policy_id(self) -> str:
         return self._raw["policy_id"]
@@ -44,7 +43,6 @@ class Policy:
     def currency(self) -> str:
         return self._raw.get("submission_rules", {}).get("currency", "INR")
 
-    # -- members ------------------------------------------------------------ #
     def get_member(self, member_id: str) -> Optional[dict[str, Any]]:
         return self._members_by_id.get(member_id)
 
@@ -57,7 +55,6 @@ class Policy:
             return self.member_join_date(member["primary_member_id"])
         return None
 
-    # -- coverage / categories --------------------------------------------- #
     @property
     def coverage(self) -> dict[str, Any]:
         return self._raw.get("coverage", {})
@@ -84,12 +81,10 @@ class Policy:
         sub_limit = float(self.category_config(category).get("sub_limit", 0))
         return max(self.per_claim_limit(), sub_limit)
 
-    # -- documents ---------------------------------------------------------- #
     def document_requirements(self, category: str) -> dict[str, list[str]]:
         reqs = self._raw.get("document_requirements", {}).get(category.upper(), {})
         return {"required": reqs.get("required", []), "optional": reqs.get("optional", [])}
 
-    # -- rules -------------------------------------------------------------- #
     @property
     def waiting_periods(self) -> dict[str, Any]:
         return self._raw.get("waiting_periods", {})

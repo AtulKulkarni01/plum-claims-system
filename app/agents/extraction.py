@@ -68,12 +68,15 @@ async def _extract_one(doc: InputDocument) -> ExtractedDocument:
         if as_json is not None:
             return _from_content(doc, as_json, "PROVIDED")
 
-    # Raw text and/or an image plus an available model -> LLM extraction.
+    # Raw text and/or an image plus an available model -> LLM extraction
+    # (Gemini primary, OpenAI fallback, with retry/backoff inside extract_fields).
     if (raw or doc.image_base64) and llm_available():
-        fields = await extract_fields(  # may raise ExtractionError
+        res = await extract_fields(  # may raise ExtractionError (all providers down)
             doc.actual_type.value, raw_text=raw, image_base64=doc.image_base64
         )
-        return _from_content(doc, fields, "LLM")
+        ed = _from_content(doc, res.fields, f"LLM:{res.provider}")
+        ed.warnings.extend(res.attempts)  # record any retries / failovers
+        return ed
 
     # Nothing structured and no LLM available -> degraded, but do not crash.
     return ExtractedDocument(
@@ -93,7 +96,7 @@ async def extract_claim(
         # raises ValidationError, not ExtractionError. The pipeline must degrade,
         # never crash — so any failure here becomes a DEGRADED document.
         try:
-            return await _extract_one(doc)
+            ed = await _extract_one(doc)
         except Exception as exc:  # noqa: BLE001 - resilience by design
             trace.add(
                 "extraction.document",
@@ -107,6 +110,17 @@ async def extract_claim(
                 file_id=doc.file_id, doc_type=doc.actual_type, source="DEGRADED",
                 warnings=[f"extraction error: {exc}"],
             )
+        # Surface which LLM provider was used and any failover/retry in the trace.
+        if ed.source.startswith("LLM"):
+            trace.add(
+                "extraction.llm",
+                StepStatus.WARN if ed.warnings else StepStatus.PASS,
+                f"{doc.file_id}: extracted via {ed.source}"
+                + (" after retry/failover" if ed.warnings else ""),
+                {"file_id": doc.file_id, "provider": ed.source,
+                 "failover_log": ed.warnings},
+            )
+        return ed
 
     docs = await asyncio.gather(*[_safe(d) for d in submission.documents])
 

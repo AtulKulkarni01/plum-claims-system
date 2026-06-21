@@ -35,7 +35,7 @@ def verify_documents(
     issues: list[DocumentIssue] = []
     category = submission.claim_category.value
 
-    # --- 1. required document types present -------------------------------- #
+    # required document types present
     reqs = policy.document_requirements(category)
     required = reqs["required"]
     uploaded_types = [d.actual_type.value for d in submission.documents]
@@ -45,7 +45,7 @@ def verify_documents(
     if missing:
         # Build a message that names what WAS uploaded and what is needed.
         uploaded_desc = ", ".join(
-            f"{uploaded_types.count(t)}× {_humanize(t)}" for t in sorted(uploaded_set)
+            f"{uploaded_types.count(t)} x {_humanize(t)}" for t in sorted(uploaded_set)
         )
         missing_desc = ", ".join(_humanize(t) for t in missing)
         issues.append(
@@ -76,7 +76,7 @@ def verify_documents(
             {"required": required, "uploaded": uploaded_types},
         )
 
-    # --- 2. readability ---------------------------------------------------- #
+    # readability
     unreadable = [d for d in submission.documents if d.quality == Quality.UNREADABLE]
     for doc in unreadable:
         label = _humanize(doc.actual_type.value)
@@ -107,7 +107,7 @@ def verify_documents(
             "All documents are legible",
         )
 
-    # --- 3. patient consistency ------------------------------------------- #
+    # patient consistency
     names: dict[str, str] = {}  # file_id -> name as written
     for doc in submission.documents:
         name = doc.patient_name_on_doc
@@ -117,7 +117,7 @@ def verify_documents(
             names[doc.file_id] = name.strip()
 
     distinct = {n.lower() for n in names.values()}
-    if len(distinct) > 1:
+    if len(distinct) > 1: # to check if the documents belong to the same patient
         listing = "; ".join(f"{fid}: '{nm}'" for fid, nm in names.items())
         issues.append(
             DocumentIssue(

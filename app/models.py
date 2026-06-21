@@ -14,9 +14,6 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-# --------------------------------------------------------------------------- #
-# Enumerations
-# --------------------------------------------------------------------------- #
 class ClaimCategory(str, Enum):
     CONSULTATION = "CONSULTATION"
     DIAGNOSTIC = "DIAGNOSTIC"
@@ -51,9 +48,11 @@ class Decision(str, Enum):
 
 
 class ResultStatus(str, Enum):
-    """Top-level result status. DOCUMENT_ISSUE means the pipeline stopped at the
-    verification gate before any claim decision was made (decision is null)."""
+    """Lifecycle of a claim result: IN_PROGRESS until a terminal state is reached —
+    COMPLETED (a decision was produced) or DOCUMENT_ISSUE (stopped at the gate,
+    decision is null)."""
 
+    IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
     DOCUMENT_ISSUE = "DOCUMENT_ISSUE"
 
@@ -67,9 +66,6 @@ class StepStatus(str, Enum):
     ERROR = "ERROR"
 
 
-# --------------------------------------------------------------------------- #
-# Input models
-# --------------------------------------------------------------------------- #
 class LineItem(BaseModel):
     description: str
     amount: float
@@ -205,7 +201,7 @@ class ClaimResult(BaseModel):
     """The single object returned to the UI / ops team for any submission."""
 
     claim_id: str
-    status: ResultStatus
+    status: ResultStatus = ResultStatus.IN_PROGRESS
     decision: Optional[Decision] = None
     member_id: str
     claim_category: ClaimCategory

@@ -64,14 +64,13 @@ async def run_claim(
 
     result = ClaimResult(
         claim_id=claim_id,
-        status=ResultStatus.COMPLETED,
+        status=ResultStatus.IN_PROGRESS,
         member_id=submission.member_id,
         claim_category=submission.claim_category,
         currency=policy.currency,
         claimed_amount=submission.claimed_amount,
     )
 
-    # --- intake ------------------------------------------------------------ #
     member = policy.get_member(submission.member_id)
     if member:
         trace.add("intake.member", StepStatus.PASS,
@@ -81,9 +80,9 @@ async def run_claim(
         trace.add("intake.member", StepStatus.WARN,
                   f"Member {submission.member_id} not found in roster",
                   {"member_id": submission.member_id}, confidence_delta=-0.2)
-        result.requires_manual_review = True
+        result.requires_manual_review = True # if member is not found in the roster, we need to manually review the claim
 
-    # --- verification gate (may stop the pipeline) ------------------------- #
+    # verification gate - may stop the pipeline for faulty / missing documents
     issues = verify_documents(submission, policy, trace)
     if issues:
         result.status = ResultStatus.DOCUMENT_ISSUE
@@ -94,11 +93,11 @@ async def run_claim(
         result.trace = trace.steps
         return result
 
-    # --- extraction (async, degrades on per-doc failure) ------------------- #
+    # extraction - async, degrades on per-doc failure
     extracted = await extract_claim(submission, trace)
     result.extracted = extracted
 
-    # --- adjudication ------------------------------------------------------ #
+    # adjudication - apply policy rules (coverage, exclusions, waiting periods, pre-auth, limits) and compute the payout
     fallback = AdjudicationOutcome(
         decision=Decision.MANUAL_REVIEW, reasons=["ADJUDICATION_FAILED"],
         messages=["Adjudication could not complete; routed to manual review."])
@@ -109,7 +108,7 @@ async def run_claim(
         result.degraded = True
         result.requires_manual_review = True
 
-    # --- fraud (the simulated-failure component) --------------------------- #
+    # fraud - the simulated-failure component
     signals, fraud_failed = _safe(
         trace, "fraud.detection", lambda: detect_fraud(submission, policy, trace), [])
     result.fraud_signals = list(signals)
@@ -117,8 +116,9 @@ async def run_claim(
         result.degraded = True
         result.requires_manual_review = True
 
-    # --- assemble final decision ------------------------------------------- #
+    # assemble final decision
     _finalize(result, outcome, signals, trace, policy, member is not None)
+    result.status = ResultStatus.COMPLETED
     result.confidence_score = round(
         min(max(BASE_CONFIDENCE + trace.total_confidence_delta(), 0.0), 1.0), 2)
     result.trace = trace.steps
