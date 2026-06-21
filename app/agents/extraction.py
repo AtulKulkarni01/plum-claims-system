@@ -66,9 +66,13 @@ async def _extract_one(doc: InputDocument) -> ExtractedDocument:
         as_json = parse_json_fields(raw)
         if as_json is not None:
             return _from_content(doc, as_json, "PROVIDED")
-        if llm_available():
-            fields = await extract_fields(doc.actual_type.value, raw)  # may raise
-            return _from_content(doc, fields, "LLM")
+
+    # Raw text and/or an image plus an available model -> LLM extraction.
+    if (raw or doc.image_base64) and llm_available():
+        fields = await extract_fields(  # may raise ExtractionError
+            doc.actual_type.value, raw_text=raw, image_base64=doc.image_base64
+        )
+        return _from_content(doc, fields, "LLM")
 
     # Nothing structured and no LLM available -> degraded, but do not crash.
     return ExtractedDocument(

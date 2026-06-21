@@ -100,11 +100,18 @@ tests/                 36 tests (unit + integration + full eval)
 
 ---
 
-## Optional: LLM extraction for raw documents
+## Optional: LLM extraction for raw documents (Google Gemini 2.0 Flash)
 
 The eval harness supplies structured `content` for each document, so the LLM is
 not exercised by the test cases. For a *real* unstructured document (raw text or
-an image), set `ANTHROPIC_API_KEY` and the extraction agent will call Claude with
-a forced JSON tool-schema, validate the result with Pydantic, and fall back to a
-degraded-but-non-crashing path on any failure. See
-[`app/llm.py`](app/llm.py) and the discussion in `docs/ARCHITECTURE.md` §6.
+an image), set `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) and the extraction agent
+calls **Gemini 2.0 Flash** with a constrained JSON `response_schema`, re-validates
+the result with Pydantic, and falls back to a degraded-but-non-crashing path on
+any failure. Gemini 2.0 Flash is chosen for lowest latency/cost at claim volume
+with strong vision + native structured output. The adapter is provider-agnostic
+(`extract_fields`), so swapping models is a one-file change. See
+[`app/llm.py`](app/llm.py) and `docs/ARCHITECTURE.md` §6.
+
+```bash
+export GEMINI_API_KEY=...   # then raw text/image documents get LLM extraction
+```

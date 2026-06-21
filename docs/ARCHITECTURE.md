@@ -57,7 +57,7 @@ rather than *emergent*.
 | **Fraud / Anomaly** (`agents/fraud.py`) | Score anomaly signals vs policy thresholds, route to manual review | no |
 | **Policy** (`policy.py`) | Read-only typed accessors over `policy_terms.json` (no hardcoded rules) | — |
 | **Trace** (`trace.py`) | Append-only observability log; the explanation of every decision | — |
-| **LLM adapter** (`llm.py`) | Optional Claude-based extraction for raw/unstructured docs, schema-validated | — |
+| **LLM adapter** (`llm.py`) | Optional Gemini 2.0 Flash extraction for raw/unstructured docs (text + vision), schema-validated | — |
 
 ## 4. Three decisions I want to defend
 

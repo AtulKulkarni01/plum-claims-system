@@ -64,15 +64,17 @@ async def extract_claim(submission: ClaimSubmission, trace: Trace) -> ExtractedC
 
 ---
 
-## LLM adapter — `extract_fields`
+## LLM adapter — `extract_fields` (Google Gemini 2.0 Flash)
 
 ```python
-async def extract_fields(doc_type: str, raw_text: str) -> dict
+async def extract_fields(doc_type: str, raw_text: str | None = None,
+                         image_base64: str | None = None) -> dict
 ```
 
-- **Input:** document type, raw document text.
-- **Output:** a dict matching the `emit_document_fields` JSON schema (validated downstream by Pydantic).
-- **Raises:** `ExtractionError` if the API key is missing, the SDK is absent, the network call fails, or no structured tool output is returned. Callers must handle this and degrade.
+- **Input:** document type, and raw text and/or a base64 image.
+- **Output:** a dict matching the `_Fields` response schema (constrained by the Gemini API and re-validated with Pydantic).
+- **Model:** `gemini-2.0-flash` (override via `CLAIMS_LLM_MODEL`); key from `GEMINI_API_KEY` / `GOOGLE_API_KEY`.
+- **Raises:** `ExtractionError` if the key is missing, the SDK is absent, there is no payload, the network call fails, or the output fails validation. Callers must handle this and degrade.
 
 ---
 
