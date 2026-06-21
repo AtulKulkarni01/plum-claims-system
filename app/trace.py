@@ -34,7 +34,7 @@ class Trace:
 
     @property
     def steps(self) -> list[TraceStep]:
-        return self._steps
+        return list(self._steps)  # copy: callers must not mutate internal state
 
     def total_confidence_delta(self) -> float:
         return sum(s.confidence_delta for s in self._steps)

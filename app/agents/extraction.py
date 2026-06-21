@@ -18,6 +18,7 @@ from typing import Any
 from ..llm import ExtractionError, extract_fields, llm_available, parse_json_fields
 from ..models import (
     ClaimSubmission,
+    DocumentType,
     ExtractedClaim,
     ExtractedDocument,
     InputDocument,
@@ -88,14 +89,18 @@ async def extract_claim(
     submission: ClaimSubmission, trace: Trace
 ) -> ExtractedClaim:
     async def _safe(doc: InputDocument) -> ExtractedDocument:
+        # Catch broadly: a malformed `content` payload (e.g. a non-numeric amount)
+        # raises ValidationError, not ExtractionError. The pipeline must degrade,
+        # never crash — so any failure here becomes a DEGRADED document.
         try:
             return await _extract_one(doc)
-        except ExtractionError as exc:
+        except Exception as exc:  # noqa: BLE001 - resilience by design
             trace.add(
                 "extraction.document",
                 StepStatus.WARN,
                 f"Extraction failed for {doc.file_id}; continuing degraded",
-                {"file_id": doc.file_id, "error": str(exc)},
+                {"file_id": doc.file_id, "error": str(exc),
+                 "error_type": type(exc).__name__},
                 confidence_delta=-0.15,
             )
             return ExtractedDocument(
@@ -107,6 +112,7 @@ async def extract_claim(
 
     # Merge into a single claim-level view. Bills contribute line items/totals;
     # prescriptions contribute clinical context.
+    bill_types = {DocumentType.HOSPITAL_BILL, DocumentType.PHARMACY_BILL}
     merged = ExtractedClaim(documents=list(docs))
     for d in docs:
         merged.patient_name = merged.patient_name or d.patient_name
@@ -118,7 +124,9 @@ async def extract_claim(
         merged.medicines.extend(d.medicines)
         if d.line_items:
             merged.line_items.extend(d.line_items)
-        if d.total is not None:
+        # Only bills carry a payable total; a stray total on a prescription/lab
+        # report must not be added (it would double-count the claim amount).
+        if d.total is not None and d.doc_type in bill_types:
             merged.total = (merged.total or 0) + d.total
 
     degraded = [d.file_id for d in docs if d.source == "DEGRADED"]
@@ -133,5 +141,8 @@ async def extract_claim(
             "diagnosis": merged.diagnosis,
             "line_item_count": len(merged.line_items),
         },
+        # Degraded documents reduce confidence so a failed extraction cannot
+        # quietly back a high-confidence decision.
+        confidence_delta=-0.1 * len(degraded),
     )
     return merged

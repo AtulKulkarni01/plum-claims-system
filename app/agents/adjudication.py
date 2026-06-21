@@ -88,12 +88,6 @@ class AdjudicationOutcome(BaseModel):
     calculation: list[CalculationStep] = Field(default_factory=list)
 
 
-def _text_blob(submission: ClaimSubmission, extracted: ExtractedClaim) -> str:
-    parts = [extracted.diagnosis or "", extracted.treatment or ""]
-    parts.extend(li.description for li in extracted.line_items)
-    return " ".join(parts).lower()
-
-
 def _match_blanket_exclusion(diagnosis: str, treatment: str) -> Optional[str]:
     blob = f"{diagnosis} {treatment}".lower()
     for keyword, phrase in _BLANKET_EXCLUSION_KEYWORDS.items():
@@ -118,12 +112,12 @@ def _detect_preauth_tests(
     high_value = policy.category_config("diagnostic").get(
         "high_value_tests_requiring_pre_auth", []
     )
-    tokens = {name.split()[0].lower() for name in high_value}  # mri, ct, pet
     haystack = [t.lower() for t in tests] + [li.description.lower() for li in items]
+    # Match the acronym as a WHOLE WORD so 'CT' does not hit 'inje(ct)ion' etc.
     found = []
     for name in high_value:
-        token = name.split()[0].lower()
-        if any(token in h for h in haystack):
+        token = re.escape(name.split()[0].lower())  # mri, ct, pet
+        if any(re.search(rf"\b{token}\b", h) for h in haystack):
             found.append(name)
     return found
 
@@ -222,13 +216,24 @@ def adjudicate(
                                    {"type": condition, "waiting_days": days,
                                     "join_date": join.isoformat(),
                                     "eligible_from": eligible.isoformat()})
-    trace.add("adjudication.waiting_period", StepStatus.PASS,
-              "No waiting-period restriction applies",
-              {"join_date": join.isoformat() if join else None})
+    if join:
+        trace.add("adjudication.waiting_period", StepStatus.PASS,
+                  "No waiting-period restriction applies",
+                  {"join_date": join.isoformat()})
+    else:
+        # Without a join date we CANNOT evaluate waiting periods — say so loudly
+        # rather than implying the check passed.
+        trace.add("adjudication.waiting_period", StepStatus.WARN,
+                  "Member join date unknown — waiting period could not be evaluated",
+                  {"join_date": None}, confidence_delta=-0.2)
 
     # 4. pre-authorization --------------------------------------------------- #
-    preauth_tests = _detect_preauth_tests(extracted.tests_ordered,
-                                           extracted.line_items, policy)
+    # Pre-auth for high-value imaging is a DIAGNOSTIC-category rule (that is where
+    # the threshold and the test list live); do not apply it to other categories.
+    preauth_tests = (
+        _detect_preauth_tests(extracted.tests_ordered, extracted.line_items, policy)
+        if category == "DIAGNOSTIC" else []
+    )
     if preauth_tests:
         threshold = cfg.get("pre_auth_threshold", 0)
         needs = any("pet" in t.lower() for t in preauth_tests) or claimed > threshold
@@ -314,9 +319,22 @@ def adjudicate(
         running = round(running - copay, 2)
         calc.append(CalculationStep(label=f"Co-pay ({copay_pct}%)", amount=-copay))
 
-    # annual OPD limit
+    # annual OPD limit: if already exhausted, reject; otherwise cap to what remains.
     remaining_annual = policy.annual_opd_limit() - submission.ytd_claims_amount
-    if remaining_annual >= 0 and running > remaining_annual:
+    if remaining_annual <= 0:
+        msg = (
+            f"The annual OPD limit of ₹{policy.annual_opd_limit():,.0f} is already "
+            f"exhausted (₹{submission.ytd_claims_amount:,.0f} claimed year-to-date). "
+            f"No further OPD claims can be approved this policy year."
+        )
+        trace.add("adjudication.annual_limit", StepStatus.FAIL, msg,
+                  {"annual_limit": policy.annual_opd_limit(),
+                   "ytd": submission.ytd_claims_amount})
+        return AdjudicationOutcome(
+            decision=Decision.REJECTED, approved_amount=0.0,
+            reasons=["ANNUAL_LIMIT_EXCEEDED"], messages=[msg],
+            line_item_results=line_results)
+    if running > remaining_annual:
         calc.append(CalculationStep(label="Capped at remaining annual OPD limit",
                                     amount=remaining_annual))
         running = remaining_annual

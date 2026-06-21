@@ -118,7 +118,7 @@ async def run_claim(
         result.requires_manual_review = True
 
     # --- assemble final decision ------------------------------------------- #
-    _finalize(result, outcome, signals, trace)
+    _finalize(result, outcome, signals, trace, policy, member is not None)
     result.confidence_score = round(
         min(max(BASE_CONFIDENCE + trace.total_confidence_delta(), 0.0), 1.0), 2)
     result.trace = trace.steps
@@ -130,29 +130,56 @@ def _finalize(
     outcome: AdjudicationOutcome,
     signals: list[FraudSignal],
     trace: Trace,
+    policy: Policy,
+    member_known: bool,
 ) -> None:
     result.line_item_results = outcome.line_item_results
     result.calculation = outcome.calculation
     result.approved_amount = outcome.approved_amount
     result.reasons = list(outcome.reasons)
     messages = list(outcome.messages)
-
     decision = outcome.decision
+    payable = decision in (Decision.APPROVED, Decision.PARTIAL)
 
-    # HIGH fraud signals route a payable claim to manual review (not auto-reject).
-    high = [s for s in signals if s.severity == "HIGH"]
-    if high and decision in (Decision.APPROVED, Decision.PARTIAL):
+    def route(code: Optional[str], message: str, detail: str, data: dict) -> None:
+        """Send a payable claim to MANUAL_REVIEW (never auto-reject)."""
+        nonlocal decision
         decision = Decision.MANUAL_REVIEW
         result.requires_manual_review = True
-        result.reasons.extend(s.code for s in signals)
-        messages.append(
-            "Routed to MANUAL_REVIEW due to fraud/anomaly signals: "
-            + "; ".join(s.detail for s in high)
-        )
+        if code and code not in result.reasons:
+            result.reasons.append(code)
+        messages.append(message)
         result.approved_amount = None
-        trace.add("decision.route", StepStatus.WARN,
-                  "Manual review due to fraud signals",
-                  {"signals": [s.model_dump() for s in high]})
+        trace.add("decision.route", StepStatus.WARN, detail, data)
+
+    # HIGH fraud signals route a payable claim to manual review.
+    high = [s for s in signals if s.severity == "HIGH"]
+    if payable and high:
+        result.reasons.extend(s.code for s in signals)
+        route(None,
+              "Routed to MANUAL_REVIEW due to fraud/anomaly signals: "
+              + "; ".join(s.detail for s in high),
+              "Manual review due to fraud signals",
+              {"signals": [s.model_dump() for s in high]})
+        payable = False
+
+    # High-value claims need human eyes even if fraud detection itself failed.
+    threshold = policy.fraud_thresholds.get("auto_manual_review_above")
+    if payable and threshold and result.claimed_amount > threshold:
+        route("HIGH_VALUE_CLAIM",
+              f"Routed to MANUAL_REVIEW: claimed ₹{result.claimed_amount:,.0f} "
+              f"exceeds the ₹{threshold:,.0f} auto-review threshold.",
+              "Manual review due to high claim value",
+              {"threshold": threshold, "claimed": result.claimed_amount})
+        payable = False
+
+    # Unverified member -> eligibility can't be trusted; send to a human.
+    if payable and not member_known:
+        route("MEMBER_NOT_FOUND",
+              "Routed to MANUAL_REVIEW: member could not be verified against the roster.",
+              "Manual review due to unverified member",
+              {"member_id": result.member_id})
+        payable = False
 
     # Degraded pipeline -> keep the decision but flag for human eyes.
     if result.degraded:

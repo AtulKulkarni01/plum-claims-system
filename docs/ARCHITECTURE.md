@@ -111,7 +111,20 @@ forced a single interpretation, I committed to it and documented it:
   outside any real "today"; enforcing it would falsely reject every case. It is
   implemented as an INFO-only check, ready to enable with a reference date.
 - **Waiting-period matching is whole-word** so "Lumbar Disc *Herni*ation" does
-  not trip the "hernia" rule (regression-tested).
+  not trip the "hernia" rule (regression-tested). Pre-auth imaging detection is
+  likewise whole-word and scoped to the DIAGNOSTIC category.
+
+Deliberately **left as known limitations** (documented rather than over-built, to
+keep the core simple):
+
+- **Network-hospital matching is lenient** (case-insensitive substring) so
+  "Apollo Hospitals, Bengaluru" matches "Apollo Hospitals". A crafted name like
+  "Not Apollo Hospitals" would also match; a production system would match
+  against a hospital ID, not a free-text name.
+- **`minimum_claim_amount` and the submission deadline are not enforced.** The
+  Pydantic boundary rejects non-positive amounts; the ₹500 floor and the 30-day
+  deadline are intake rules that need a trusted submission date (the eval dates
+  fall outside any real "today"), so they are left as INFO-level rules.
 
 ## 6. What I considered and rejected
 

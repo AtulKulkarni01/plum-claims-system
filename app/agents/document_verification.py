@@ -77,30 +77,30 @@ def verify_documents(
         )
 
     # --- 2. readability ---------------------------------------------------- #
-    for doc in submission.documents:
-        if doc.quality == Quality.UNREADABLE:
-            label = _humanize(doc.actual_type.value)
-            issues.append(
-                DocumentIssue(
-                    code="UNREADABLE_DOCUMENT",
-                    file_id=doc.file_id,
-                    message=(
-                        f"The {label} you uploaded "
-                        f"({doc.file_name or doc.file_id}) is too blurry/low-quality "
-                        f"to read. We have NOT rejected your claim."
-                    ),
-                    action_required=(
-                        f"Please re-upload a clear photo or scan of the {label}."
-                    ),
-                )
+    unreadable = [d for d in submission.documents if d.quality == Quality.UNREADABLE]
+    for doc in unreadable:
+        label = _humanize(doc.actual_type.value)
+        issues.append(
+            DocumentIssue(
+                code="UNREADABLE_DOCUMENT",
+                file_id=doc.file_id,
+                message=(
+                    f"The {label} you uploaded "
+                    f"({doc.file_name or doc.file_id}) is too blurry/low-quality "
+                    f"to read. We have NOT rejected your claim."
+                ),
+                action_required=(
+                    f"Please re-upload a clear photo or scan of the {label}."
+                ),
             )
-            trace.add(
-                "document_verification.readability",
-                StepStatus.FAIL,
-                f"Document {doc.file_id} ({label}) is unreadable",
-                {"file_id": doc.file_id, "quality": doc.quality.value},
-            )
-    if not any(d.quality == Quality.UNREADABLE for d in submission.documents):
+        )
+        trace.add(
+            "document_verification.readability",
+            StepStatus.FAIL,
+            f"Document {doc.file_id} ({label}) is unreadable",
+            {"file_id": doc.file_id, "quality": doc.quality.value},
+        )
+    if not unreadable:
         trace.add(
             "document_verification.readability",
             StepStatus.PASS,
