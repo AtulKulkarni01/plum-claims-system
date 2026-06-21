@@ -29,7 +29,7 @@ def _image_claim():
 
 
 def _fake_reader(prescription_fields, bill_fields):
-    async def fake(doc_type, raw_text=None, image_base64=None):
+    async def fake(doc_type, raw_text=None, image_base64=None, mime_type=None):
         fields = prescription_fields if doc_type == "PRESCRIPTION" else bill_fields
         return ExtractionResult(fields=fields, provider="gemini")
     return fake

@@ -84,6 +84,7 @@ class InputDocument(BaseModel):
     content: Optional[dict[str, Any]] = None
     text: Optional[str] = None
     image_base64: Optional[str] = None
+    mime_type: Optional[str] = None  # e.g. image/jpeg, image/png, application/pdf
 
 
 class ClaimHistoryEntry(BaseModel):
@@ -158,6 +159,10 @@ class ExtractedDocument(BaseModel):
     medicines: list[str] = Field(default_factory=list)
     date: Optional[str] = None
     warnings: list[str] = Field(default_factory=list)
+    low_confidence_fields: list[str] = Field(default_factory=list)
+    alterations: list[str] = Field(default_factory=list)
+    duplicate_stamps: list[str] = Field(default_factory=list)
+    registration_valid: Optional[bool] = None
 
 
 class ExtractedClaim(BaseModel):
