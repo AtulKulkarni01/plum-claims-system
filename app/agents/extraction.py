@@ -1,0 +1,133 @@
+"""Extraction Agent — turns documents into structured, typed fields.
+
+Per-document strategy (in priority order):
+  1. `content` present  -> use it directly (source = PROVIDED).
+  2. raw `text`/`image` -> run the LLM adapter, validate (source = LLM).
+  3. nothing usable / LLM failure -> emit an empty record flagged DEGRADED
+     and record a warning. The pipeline continues with reduced confidence.
+
+Documents are extracted concurrently with asyncio.gather — this is the one
+place real latency lives (LLM/OCR I/O), so it is where async matters.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+from ..llm import ExtractionError, extract_fields, llm_available, parse_json_fields
+from ..models import (
+    ClaimSubmission,
+    ExtractedClaim,
+    ExtractedDocument,
+    InputDocument,
+    LineItem,
+    StepStatus,
+)
+from ..trace import Trace
+
+
+def _line_items(raw: Any) -> list[LineItem]:
+    items: list[LineItem] = []
+    for li in raw or []:
+        try:
+            items.append(LineItem(description=li["description"], amount=float(li["amount"])))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return items
+
+
+def _from_content(doc: InputDocument, content: dict[str, Any], source: str) -> ExtractedDocument:
+    return ExtractedDocument(
+        file_id=doc.file_id,
+        doc_type=doc.actual_type,
+        source=source,
+        patient_name=content.get("patient_name") or doc.patient_name_on_doc,
+        doctor_name=content.get("doctor_name"),
+        doctor_registration=content.get("doctor_registration"),
+        diagnosis=content.get("diagnosis"),
+        treatment=content.get("treatment"),
+        hospital_name=content.get("hospital_name"),
+        line_items=_line_items(content.get("line_items")),
+        total=content.get("total"),
+        tests_ordered=list(content.get("tests_ordered", []) or []),
+        medicines=list(content.get("medicines", []) or []),
+        date=content.get("date"),
+        warnings=list(content.get("unreadable_fields", []) or []),
+    )
+
+
+async def _extract_one(doc: InputDocument) -> ExtractedDocument:
+    if doc.content:
+        return _from_content(doc, doc.content, "PROVIDED")
+
+    raw = doc.text
+    if raw:
+        as_json = parse_json_fields(raw)
+        if as_json is not None:
+            return _from_content(doc, as_json, "PROVIDED")
+        if llm_available():
+            fields = await extract_fields(doc.actual_type.value, raw)  # may raise
+            return _from_content(doc, fields, "LLM")
+
+    # Nothing structured and no LLM available -> degraded, but do not crash.
+    return ExtractedDocument(
+        file_id=doc.file_id,
+        doc_type=doc.actual_type,
+        source="DEGRADED",
+        patient_name=doc.patient_name_on_doc,
+        warnings=["no structured content and no extractor available"],
+    )
+
+
+async def extract_claim(
+    submission: ClaimSubmission, trace: Trace
+) -> ExtractedClaim:
+    async def _safe(doc: InputDocument) -> ExtractedDocument:
+        try:
+            return await _extract_one(doc)
+        except ExtractionError as exc:
+            trace.add(
+                "extraction.document",
+                StepStatus.WARN,
+                f"Extraction failed for {doc.file_id}; continuing degraded",
+                {"file_id": doc.file_id, "error": str(exc)},
+                confidence_delta=-0.15,
+            )
+            return ExtractedDocument(
+                file_id=doc.file_id, doc_type=doc.actual_type, source="DEGRADED",
+                warnings=[f"extraction error: {exc}"],
+            )
+
+    docs = await asyncio.gather(*[_safe(d) for d in submission.documents])
+
+    # Merge into a single claim-level view. Bills contribute line items/totals;
+    # prescriptions contribute clinical context.
+    merged = ExtractedClaim(documents=list(docs))
+    for d in docs:
+        merged.patient_name = merged.patient_name or d.patient_name
+        merged.diagnosis = merged.diagnosis or d.diagnosis
+        merged.treatment = merged.treatment or d.treatment
+        merged.doctor_registration = merged.doctor_registration or d.doctor_registration
+        merged.hospital_name = merged.hospital_name or d.hospital_name
+        merged.tests_ordered.extend(d.tests_ordered)
+        merged.medicines.extend(d.medicines)
+        if d.line_items:
+            merged.line_items.extend(d.line_items)
+        if d.total is not None:
+            merged.total = (merged.total or 0) + d.total
+
+    degraded = [d.file_id for d in docs if d.source == "DEGRADED"]
+    status = StepStatus.WARN if degraded else StepStatus.PASS
+    trace.add(
+        "extraction.summary",
+        status,
+        f"Extracted {len(docs)} document(s)"
+        + (f"; degraded: {degraded}" if degraded else ""),
+        {
+            "sources": {d.file_id: d.source for d in docs},
+            "diagnosis": merged.diagnosis,
+            "line_item_count": len(merged.line_items),
+        },
+    )
+    return merged

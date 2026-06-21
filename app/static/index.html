@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plum · Claims Adjudication Console</title>
+<style>
+  :root {
+    --bg: oklch(98% 0.005 300);
+    --surface: oklch(100% 0 0);
+    --ink: oklch(22% 0.02 300);
+    --muted: oklch(52% 0.02 300);
+    --line: oklch(90% 0.01 300);
+    --accent: oklch(45% 0.18 305);
+    --accent-soft: oklch(95% 0.04 305);
+    --green: oklch(58% 0.15 150);
+    --amber: oklch(72% 0.15 75);
+    --red: oklch(58% 0.20 25);
+    --indigo: oklch(55% 0.16 270);
+    --orange: oklch(68% 0.17 50);
+    --radius: 14px;
+    --shadow: 0 1px 2px oklch(20% 0.02 300 / 0.06), 0 8px 24px oklch(20% 0.02 300 / 0.06);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans);
+    line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 22px 32px; border-bottom: 1px solid var(--line); background: var(--surface);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  header .brand { font-weight: 700; font-size: 1.25rem; letter-spacing: -0.02em; }
+  header .brand span { color: var(--accent); }
+  header .sub { color: var(--muted); font-size: 0.9rem; }
+  header .policy { margin-left: auto; font-size: 0.8rem; color: var(--muted); font-family: var(--mono); }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 0; min-height: calc(100vh - 66px); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  .panel { padding: 24px 28px; }
+  .submit-panel { border-right: 1px solid var(--line); background: var(--surface); }
+  .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; margin-bottom: 8px; }
+  select, textarea, button { font-family: var(--sans); font-size: 0.9rem; }
+  select {
+    width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); color: var(--ink); margin-bottom: 18px;
+  }
+  textarea {
+    width: 100%; height: 320px; padding: 12px; border: 1px solid var(--line);
+    border-radius: 10px; font-family: var(--mono); font-size: 0.78rem; resize: vertical;
+    background: oklch(99% 0.003 300); color: var(--ink);
+  }
+  .case-desc { font-size: 0.82rem; color: var(--muted); margin: -8px 0 16px; min-height: 2.5em; }
+  button.run {
+    width: 100%; margin-top: 16px; padding: 13px; border: none; border-radius: 10px;
+    background: var(--accent); color: white; font-weight: 600; cursor: pointer;
+    transition: transform .12s ease, filter .12s ease;
+  }
+  button.run:hover { filter: brightness(1.08); }
+  button.run:active { transform: translateY(1px); }
+  button.run:disabled { opacity: .6; cursor: progress; }
+
+  .result-panel { background: var(--bg); }
+  .placeholder { color: var(--muted); display: grid; place-items: center; height: 60vh; text-align: center; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px 24px; margin-bottom: 18px; }
+
+  .verdict { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .badge {
+    font-weight: 700; font-size: 0.95rem; padding: 8px 16px; border-radius: 999px;
+    color: white; letter-spacing: 0.01em;
+  }
+  .b-APPROVED { background: var(--green); }
+  .b-PARTIAL { background: var(--amber); }
+  .b-REJECTED { background: var(--red); }
+  .b-MANUAL_REVIEW { background: var(--indigo); }
+  .b-DOC { background: var(--orange); }
+  .amount { font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; }
+  .amount small { font-size: 0.95rem; font-weight: 500; color: var(--muted); }
+  .claimid { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); margin-left: auto; }
+
+  .conf-wrap { margin-top: 16px; }
+  .conf-bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; margin-top: 6px; }
+  .conf-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--amber), var(--green)); }
+  .flags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .flag { font-size: 0.74rem; padding: 4px 10px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .flag.warn { background: oklch(95% 0.06 50); color: var(--orange); }
+
+  .message { margin-top: 14px; padding: 14px 16px; background: oklch(98% 0.01 300); border-left: 3px solid var(--accent); border-radius: 8px; font-size: 0.9rem; }
+
+  h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  .li-REJECTED td { color: var(--muted); }
+  .pill { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+  .pill.ok { background: oklch(94% 0.06 150); color: var(--green); }
+  .pill.no { background: oklch(95% 0.06 25); color: var(--red); }
+
+  .calc-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 0.88rem; }
+  .calc-row:last-child { border-bottom: none; font-weight: 700; }
+  .calc-row .v { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .calc-row .v.neg { color: var(--red); }
+
+  /* trace timeline */
+  .trace { position: relative; }
+  .tstep { position: relative; padding: 0 0 18px 26px; }
+  .tstep::before { content: ""; position: absolute; left: 5px; top: 16px; bottom: -2px; width: 2px; background: var(--line); }
+  .tstep:last-child::before { display: none; }
+  .dot { position: absolute; left: 0; top: 4px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--line); }
+  .d-PASS { background: var(--green); } .d-FAIL { background: var(--red); }
+  .d-WARN { background: var(--amber); } .d-ERROR { background: var(--red); }
+  .d-INFO, .d-SKIP { background: var(--muted); }
+  .tstep .name { font-family: var(--mono); font-size: 0.78rem; font-weight: 600; }
+  .tstep .stat { font-size: 0.66rem; font-weight: 700; padding: 1px 7px; border-radius: 5px; margin-left: 8px; vertical-align: middle; }
+  .s-PASS { background: oklch(94% 0.06 150); color: var(--green); }
+  .s-FAIL, .s-ERROR { background: oklch(95% 0.06 25); color: var(--red); }
+  .s-WARN { background: oklch(95% 0.07 75); color: var(--orange); }
+  .s-INFO, .s-SKIP { background: var(--line); color: var(--muted); }
+  .tstep .det { font-size: 0.83rem; color: var(--muted); margin-top: 3px; }
+  .tstep .data { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+  .issue { padding: 12px 14px; border-radius: 8px; background: oklch(97% 0.03 50); border: 1px solid oklch(88% 0.06 50); margin-bottom: 10px; }
+  .issue .code { font-family: var(--mono); font-size: 0.72rem; font-weight: 700; color: var(--orange); }
+  .issue .act { font-size: 0.82rem; margin-top: 6px; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Plum<span>·</span>Claims</div>
+  <div class="sub">Multi-agent adjudication console</div>
+  <div class="policy" id="policy">policy: …</div>
+</header>
+<main>
+  <section class="panel submit-panel">
+    <div class="label">Load a test case</div>
+    <select id="caseSelect"><option value="">— select TC001–TC012 —</option></select>
+    <div class="case-desc" id="caseDesc"></div>
+    <div class="label">Claim submission (editable JSON)</div>
+    <textarea id="payload" spellcheck="false">{}</textarea>
+    <button class="run" id="runBtn">Adjudicate claim →</button>
+  </section>
+  <section class="panel result-panel" id="result">
+    <div class="placeholder">Select a test case and run it to see the decision and full trace.</div>
+  </section>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+let CASES = [];
+
+async function boot() {
+  try {
+    const p = await (await fetch('/api/policy')).json();
+    $('#policy').textContent = `${p.policy_id} · ${p.member_count} members · ${p.currency}`;
+  } catch (e) {}
+  const tc = await (await fetch('/api/test-cases')).json();
+  CASES = tc.test_cases || [];
+  const sel = $('#caseSelect');
+  for (const c of CASES) {
+    const o = document.createElement('option');
+    o.value = c.case_id; o.textContent = `${c.case_id} — ${c.case_name}`;
+    sel.appendChild(o);
+  }
+}
+$('#caseSelect').addEventListener('change', (e) => {
+  const c = CASES.find((x) => x.case_id === e.target.value);
+  if (!c) { $('#caseDesc').textContent=''; return; }
+  $('#caseDesc').textContent = c.description;
+  $('#payload').value = JSON.stringify(c.input, null, 2);
+});
+
+$('#runBtn').addEventListener('click', async () => {
+  let body;
+  try { body = JSON.parse($('#payload').value); }
+  catch (e) { alert('Invalid JSON: ' + e.message); return; }
+  const btn = $('#runBtn'); btn.disabled = true; btn.textContent = 'Processing…';
+  try {
+    const res = await fetch('/api/claims', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) { renderError(data); }
+    else render(data);
+  } catch (e) { $('#result').innerHTML = `<div class="card">Request failed: ${e.message}</div>`; }
+  finally { btn.disabled = false; btn.textContent = 'Adjudicate claim →'; }
+});
+
+const money = (n, cur='INR') => n == null ? '—' : new Intl.NumberFormat('en-IN',{style:'currency',currency:cur,maximumFractionDigits:0}).format(n);
+const esc = (s) => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function renderError(d) {
+  $('#result').innerHTML = `<div class="card"><h3>Validation error (422)</h3><div class="data">${esc(JSON.stringify(d.detail||d,null,2))}</div></div>`;
+}
+
+function render(r) {
+  const isDoc = r.status === 'DOCUMENT_ISSUE';
+  const dec = r.decision || (isDoc ? 'DOC' : '—');
+  const badgeClass = isDoc ? 'b-DOC' : 'b-' + r.decision;
+  const decLabel = isDoc ? 'STOPPED · DOCUMENT ISSUE' : r.decision;
+  const cur = r.currency || 'INR';
+
+  let html = `<div class="card">
+    <div class="verdict">
+      <span class="badge ${badgeClass}">${decLabel}</span>
+      ${!isDoc ? `<span class="amount">${money(r.approved_amount, cur)} <small>of ${money(r.claimed_amount, cur)} claimed</small></span>` : `<span class="amount"><small>No decision made — claim halted before adjudication</small></span>`}
+      <span class="claimid">${r.claim_id}</span>
+    </div>
+    <div class="conf-wrap">
+      <div class="label">Confidence · ${(r.confidence_score*100).toFixed(0)}%${r.requires_manual_review ? ' · manual review recommended' : ''}${r.degraded ? ' · degraded' : ''}</div>
+      <div class="conf-bar"><div class="conf-fill" style="width:${Math.max(4,r.confidence_score*100)}%"></div></div>
+    </div>
+    ${r.reasons && r.reasons.length ? `<div class="flags">${r.reasons.map(x=>`<span class="flag">${esc(x)}</span>`).join('')}</div>`:''}
+    ${r.member_message ? `<div class="message">${esc(r.member_message)}</div>`:''}
+  </div>`;
+
+  if (isDoc) {
+    html += `<div class="card"><h3>Document issues</h3>${r.document_issues.map(i=>`
+      <div class="issue"><div class="code">${i.code}</div><div>${esc(i.message)}</div><div class="act">→ ${esc(i.action_required)}</div></div>`).join('')}</div>`;
+  }
+
+  if (r.line_item_results && r.line_item_results.length) {
+    html += `<div class="card"><h3>Itemized adjudication</h3><table>
+      <tr><th>Line item</th><th class="num">Claimed</th><th class="num">Approved</th><th>Status</th><th>Reason</th></tr>
+      ${r.line_item_results.map(li=>`<tr class="li-${li.status}">
+        <td>${esc(li.description)}</td><td class="num">${money(li.claimed_amount,cur)}</td>
+        <td class="num">${money(li.approved_amount,cur)}</td>
+        <td><span class="pill ${li.status==='APPROVED'?'ok':'no'}">${li.status}</span></td>
+        <td>${esc(li.reason||'')}</td></tr>`).join('')}
+    </table></div>`;
+  }
+
+  if (r.calculation && r.calculation.length) {
+    html += `<div class="card"><h3>Payout calculation</h3>${r.calculation.map(c=>`
+      <div class="calc-row"><span>${esc(c.label)}</span><span class="v ${c.amount<0?'neg':''}">${c.amount<0?'−':''}${money(Math.abs(c.amount),cur)}</span></div>`).join('')}</div>`;
+  }
+
+  if (r.fraud_signals && r.fraud_signals.length) {
+    html += `<div class="card"><h3>Fraud / anomaly signals</h3>${r.fraud_signals.map(s=>`
+      <div class="issue"><div class="code">${s.code} · ${s.severity}</div><div>${esc(s.detail)}</div></div>`).join('')}</div>`;
+  }
+
+  html += `<div class="card"><h3>Decision trace · ${r.trace.length} steps</h3><div class="trace">
+    ${r.trace.map(s=>`<div class="tstep">
+      <span class="dot d-${s.status}"></span>
+      <span class="name">${esc(s.step)}</span><span class="stat s-${s.status}">${s.status}</span>
+      <div class="det">${esc(s.detail)}</div>
+      ${Object.keys(s.data||{}).length ? `<div class="data">${esc(JSON.stringify(s.data))}</div>`:''}
+    </div>`).join('')}
+  </div></div>`;
+
+  $('#result').innerHTML = html;
+}
+boot();
+</script>
+</body>
+</html>
