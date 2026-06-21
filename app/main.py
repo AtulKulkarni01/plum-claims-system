@@ -11,6 +11,7 @@ Endpoints
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -25,6 +26,24 @@ from .policy import get_policy
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
 TEST_CASES_PATH = ROOT / "test_cases.json"
+
+
+def _load_dotenv() -> None:
+    """Load .env into the environment (without overriding already-set vars) so the
+    web app picks up GEMINI_API_KEY / OPENAI_API_KEY without a manual export."""
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        if val.strip():
+            os.environ.setdefault(key.strip(), val.strip())
+
+
+_load_dotenv()
 
 app = FastAPI(
     title="Plum Claims Processing",
