@@ -15,8 +15,8 @@ any decision.
                     ┌─────────────────────────── Orchestrator ───────────────────────────┐
                     │  owns the Trace, the ClaimResult, and the failure boundary           │
   ClaimSubmission ─▶│                                                                      │
-                    │  Intake ─▶ Document Verification ──(issues?)──▶ STOP (decision=null) │
-                    │              │ no issues                                              │
+                    │  Intake ─▶ Perception ─▶ Document Verification ──(issues?)──▶ STOP   │
+                    │              │ (read uploaded images)        │ no issues             │
                     │              ▼                                                        │
                     │  Extraction (async, per-doc)                                         │
                     │              ▼                                                        │
@@ -51,6 +51,7 @@ rather than *emergent*.
 |-----------|----------------|--------------------|
 | **Orchestrator** (`orchestrator.py`) | Run stages in order, own trace + result, catch failures, compute confidence | — |
 | **Intake** | Resolve member against the roster, structural validation | no |
+| **Perception** (`agents/perception.py`) | Read uploaded document images into structured `content` (Gemini→OpenAI), derive patient name + legibility, before the gate | no |
 | **Document Verification** (`agents/document_verification.py`) | Catch wrong/missing docs, unreadable docs, patient mismatch — with specific member messages | **yes (the only gate)** |
 | **Extraction** (`agents/extraction.py`) | Turn documents into structured, typed fields; async per-document; degrade on failure | no |
 | **Adjudication** (`agents/adjudication.py`) | Apply policy rules (coverage, exclusions, waiting periods, pre-auth, limits) and compute the payout | no |

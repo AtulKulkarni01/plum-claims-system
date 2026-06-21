@@ -20,6 +20,7 @@ from .agents.adjudication import AdjudicationOutcome, adjudicate
 from .agents.document_verification import verify_documents
 from .agents.extraction import extract_claim
 from .agents.fraud import detect_fraud
+from .agents.perception import perceive
 from .models import (
     ClaimResult,
     ClaimSubmission,
@@ -82,6 +83,9 @@ async def run_claim(
                   {"member_id": submission.member_id}, confidence_delta=-0.2)
         result.requires_manual_review = True # if member is not found in the roster, we need to manually review the claim
 
+    # perception - read any uploaded document images into structured fields first
+    await perceive(submission, trace)
+
     # verification gate - may stop the pipeline for faulty / missing documents
     issues = verify_documents(submission, policy, trace)
     if issues:
@@ -96,6 +100,12 @@ async def run_claim(
     # extraction - async, degrades on per-doc failure
     extracted = await extract_claim(submission, trace)
     result.extracted = extracted
+
+    # a document we could not read means we'd be deciding on unverified data ->
+    # flag for a human rather than silently trusting the claimed amount
+    if any(d.source == "DEGRADED" for d in extracted.documents):
+        result.degraded = True
+        result.requires_manual_review = True
 
     # adjudication - apply policy rules (coverage, exclusions, waiting periods, pre-auth, limits) and compute the payout
     fallback = AdjudicationOutcome(

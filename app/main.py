@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import ValidationError
 
+from .llm import llm_available
 from .models import ClaimResult, ClaimSubmission
 from .orchestrator import run_claim
 from .policy import get_policy
@@ -44,7 +45,9 @@ async def health() -> dict:
 
 @app.get("/api/policy")
 async def policy_summary() -> dict:
-    return get_policy().summary()
+    summary = get_policy().summary()
+    summary["llm_configured"] = llm_available()
+    return summary
 
 
 @app.get("/api/test-cases")

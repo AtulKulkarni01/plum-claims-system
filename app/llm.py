@@ -57,6 +57,7 @@ class _Fields(BaseModel):
     tests_ordered: list[str] = []
     medicines: list[str] = []
     unreadable_fields: list[str] = []
+    legible: bool = True
 
 
 _PROMPT = (
@@ -65,14 +66,15 @@ _PROMPT = (
     "KA/45678/2015. Expand shorthand diagnoses (HTN=Hypertension, T2DM=Type 2 "
     "Diabetes). For a bill, capture every line item as {{description, amount}} and "
     "the total. List any field you genuinely cannot read in `unreadable_fields` "
-    "rather than guessing."
+    "rather than guessing. Set legible=false if the document is too blurry or "
+    "low-quality to read reliably."
 )
 
 _JSON_HINT = (
     " Respond ONLY with a JSON object with keys: patient_name, doctor_name, "
     "doctor_registration, diagnosis, treatment, hospital_name, total, date, "
     "line_items (array of {description, amount}), tests_ordered (array), "
-    "medicines (array), unreadable_fields (array)."
+    "medicines (array), unreadable_fields (array), legible (boolean)."
 )
 
 

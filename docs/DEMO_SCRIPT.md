@@ -99,7 +99,7 @@ Open `app/agents/adjudication.py` (the check-order comment) and
 > configuration so a non-engineer could change policy without touching Python.
 > Right now the values come from the file but the *logic* is still in code."
 
-Close on the numbers: **12/12 eval cases pass, 47 tests, 92% coverage** — and
+Close on the numbers: **12/12 eval cases pass, 54 tests, 90% coverage** — and
 point to `docs/EVAL_REPORT.md`.
 
 ---

@@ -59,7 +59,7 @@ async def extract_claim(submission: ClaimSubmission, trace: Trace) -> ExtractedC
 - **Output:** an `ExtractedClaim` merging every document's `ExtractedDocument`.
   - Per-document `source ∈ {PROVIDED, LLM, DEGRADED}`.
   - Merges clinical fields (diagnosis/treatment/registration) and financial fields (line_items/total).
-- **Behavior:** documents extracted concurrently (`asyncio.gather`). Priority: structured `content` → JSON `text` → LLM (if `ANTHROPIC_API_KEY`) → degraded empty record.
+- **Behavior:** documents extracted concurrently (`asyncio.gather`). Priority: structured `content` → JSON `text` → LLM (Gemini→OpenAI, if `GEMINI_API_KEY`/`OPENAI_API_KEY`) → degraded empty record.
 - **Errors:** an `ExtractionError` from the LLM adapter is caught per-document → that document becomes `DEGRADED` with a `-0.15` confidence trace step. `extract_claim` itself does not raise.
 
 ---

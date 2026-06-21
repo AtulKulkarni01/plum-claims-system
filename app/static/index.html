@@ -62,6 +62,17 @@
   button.run:active { transform: translateY(1px); }
   button.run:disabled { opacity: .6; cursor: progress; }
 
+  .mode-toggle { display: flex; gap: 6px; margin-bottom: 18px; background: oklch(95% 0.01 300); padding: 4px; border-radius: 10px; }
+  .mode-btn { flex: 1; padding: 8px; border: none; border-radius: 7px; background: transparent; color: var(--muted); font-weight: 600; font-size: 0.82rem; cursor: pointer; }
+  .mode-btn.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
+  .u-in { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 14px; font-family: var(--sans); font-size: 0.88rem; background: var(--surface); color: var(--ink); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .doc-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .doc-row .fn { flex: 1; font-size: 0.78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc-row select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.78rem; }
+  .u-note { font-size: 0.76rem; margin-top: 12px; padding: 10px 12px; border-radius: 8px; }
+  .u-note.warn { background: oklch(96% 0.05 50); color: var(--orange); border: 1px solid oklch(88% 0.06 50); }
+
   .result-panel { background: var(--bg); }
   .placeholder { color: var(--muted); display: grid; place-items: center; height: 60vh; text-align: center; }
 
@@ -135,12 +146,42 @@
 </header>
 <main>
   <section class="panel submit-panel">
-    <div class="label">Load a test case</div>
-    <select id="caseSelect"><option value="">— select TC001–TC012 —</option></select>
-    <div class="case-desc" id="caseDesc"></div>
-    <div class="label">Claim submission (editable JSON)</div>
-    <textarea id="payload" spellcheck="false">{}</textarea>
-    <button class="run" id="runBtn">Adjudicate claim →</button>
+    <div class="mode-toggle">
+      <button id="modeCase" class="mode-btn active">Test case</button>
+      <button id="modeUpload" class="mode-btn">Upload documents</button>
+    </div>
+
+    <div id="caseMode">
+      <div class="label">Load a test case</div>
+      <select id="caseSelect"><option value="">— select TC001–TC012 —</option></select>
+      <div class="case-desc" id="caseDesc"></div>
+      <div class="label">Claim submission (editable JSON)</div>
+      <textarea id="payload" spellcheck="false">{}</textarea>
+      <button class="run" id="runBtn">Adjudicate claim →</button>
+    </div>
+
+    <div id="uploadMode" style="display:none">
+      <div class="grid2">
+        <div><div class="label">Member ID</div><input id="u_member" class="u-in" value="EMP001"></div>
+        <div><div class="label">Category</div>
+          <select id="u_category" class="u-in">
+            <option>CONSULTATION</option><option>DIAGNOSTIC</option><option>PHARMACY</option>
+            <option>DENTAL</option><option>VISION</option><option>ALTERNATIVE_MEDICINE</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid2">
+        <div><div class="label">Treatment date</div><input id="u_date" class="u-in" type="date" value="2024-11-01"></div>
+        <div><div class="label">Claimed ₹</div><input id="u_amount" class="u-in" type="number" value="1500"></div>
+      </div>
+      <div class="label">Hospital (optional)</div>
+      <input id="u_hospital" class="u-in" placeholder="e.g. Apollo Hospitals">
+      <div class="label">Documents (images)</div>
+      <input id="u_files" class="u-in" type="file" accept="image/*" multiple>
+      <div id="u_rows"></div>
+      <button class="run" id="uploadBtn">Read &amp; adjudicate →</button>
+      <div class="u-note" id="u_note"></div>
+    </div>
   </section>
   <section class="panel result-panel" id="result">
     <div class="placeholder">Select a test case and run it to see the decision and full trace.</div>
@@ -154,6 +195,14 @@ async function boot() {
   try {
     const p = await (await fetch('/api/policy')).json();
     $('#policy').textContent = `${p.policy_id} · ${p.member_count} members · ${p.currency}`;
+    const note = $('#u_note');
+    if (p.llm_configured) {
+      note.className = 'u-note';
+      note.textContent = 'A vision provider is configured — uploaded images will be read by the LLM (Gemini → OpenAI failover).';
+    } else {
+      note.className = 'u-note warn';
+      note.textContent = '⚠ No vision provider configured (set GEMINI_API_KEY or OPENAI_API_KEY on the server). Uploaded images cannot be read — use Test case mode for a full demo.';
+    }
   } catch (e) {}
   const tc = await (await fetch('/api/test-cases')).json();
   CASES = tc.test_cases || [];
@@ -171,20 +220,72 @@ $('#caseSelect').addEventListener('change', (e) => {
   $('#payload').value = JSON.stringify(c.input, null, 2);
 });
 
-$('#runBtn').addEventListener('click', async () => {
+async function submitClaim(payload, btn, label) {
+  btn.disabled = true; btn.textContent = 'Processing…';
+  try {
+    const res = await fetch('/api/claims', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) renderError(data); else render(data);
+  } catch (e) { $('#result').innerHTML = `<div class="card">Request failed: ${e.message}</div>`; }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
+$('#runBtn').addEventListener('click', () => {
   let body;
   try { body = JSON.parse($('#payload').value); }
   catch (e) { alert('Invalid JSON: ' + e.message); return; }
-  const btn = $('#runBtn'); btn.disabled = true; btn.textContent = 'Processing…';
-  try {
-    const res = await fetch('/api/claims', {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) { renderError(data); }
-    else render(data);
-  } catch (e) { $('#result').innerHTML = `<div class="card">Request failed: ${e.message}</div>`; }
-  finally { btn.disabled = false; btn.textContent = 'Adjudicate claim →'; }
+  submitClaim(body, $('#runBtn'), 'Adjudicate claim →');
+});
+
+// ---- mode toggle ----
+function setMode(upload) {
+  $('#modeUpload').classList.toggle('active', upload);
+  $('#modeCase').classList.toggle('active', !upload);
+  $('#uploadMode').style.display = upload ? 'block' : 'none';
+  $('#caseMode').style.display = upload ? 'none' : 'block';
+}
+$('#modeCase').addEventListener('click', () => setMode(false));
+$('#modeUpload').addEventListener('click', () => setMode(true));
+
+// ---- upload mode: a document-type dropdown per chosen file ----
+const DOC_TYPES = ['PRESCRIPTION','HOSPITAL_BILL','PHARMACY_BILL','LAB_REPORT','DIAGNOSTIC_REPORT','DISCHARGE_SUMMARY','DENTAL_REPORT'];
+$('#u_files').addEventListener('change', () => {
+  const files = $('#u_files').files;
+  $('#u_rows').innerHTML = Array.from(files).map((f, i) => `
+    <div class="doc-row">
+      <span class="fn">${esc(f.name)}</span>
+      <select id="u_type_${i}">${DOC_TYPES.map(t => `<option value="${t}">${t.replace(/_/g,' ').toLowerCase()}</option>`).join('')}</select>
+    </div>`).join('');
+});
+
+function fileToB64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);   // strip the data: prefix
+    r.onerror = rej; r.readAsDataURL(file);
+  });
+}
+
+$('#uploadBtn').addEventListener('click', async () => {
+  const files = $('#u_files').files;
+  if (!files.length) { alert('Choose at least one document image.'); return; }
+  const member = $('#u_member').value.trim();
+  if (!member) { alert('Enter a member ID.'); return; }
+  const docs = [];
+  for (let i = 0; i < files.length; i++) {
+    const b64 = await fileToB64(files[i]);
+    docs.push({ file_id: `U${i+1}`, file_name: files[i].name,
+                actual_type: document.querySelector(`#u_type_${i}`).value, image_base64: b64 });
+  }
+  const payload = {
+    member_id: member, policy_id: 'PLUM_GHI_2024',
+    claim_category: $('#u_category').value, treatment_date: $('#u_date').value,
+    claimed_amount: parseFloat($('#u_amount').value || '0'), documents: docs,
+  };
+  const h = $('#u_hospital').value.trim(); if (h) payload.hospital_name = h;
+  submitClaim(payload, $('#uploadBtn'), 'Read & adjudicate →');
 });
 
 const money = (n, cur='INR') => n == null ? '—' : new Intl.NumberFormat('en-IN',{style:'currency',currency:cur,maximumFractionDigits:0}).format(n);

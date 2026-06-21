@@ -59,7 +59,9 @@ def _from_content(doc: InputDocument, content: dict[str, Any], source: str) -> E
 
 
 async def _extract_one(doc: InputDocument) -> ExtractedDocument:
-    if doc.content:
+    # `is not None` so a doc already read by the perception stage (even to an empty
+    # dict) is used as-is and not sent to the LLM a second time.
+    if doc.content is not None:
         return _from_content(doc, doc.content, "PROVIDED")
 
     raw = doc.text

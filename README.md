@@ -32,8 +32,8 @@ JSON, and click **Adjudicate claim** to see the decision, the payout
 calculation, fraud signals, and the full decision trace.
 
 No API key is required — the system is fully functional and deterministic out of
-the box. (Setting `ANTHROPIC_API_KEY` enables LLM extraction for *raw,
-unstructured* documents; see below.)
+the box. (Setting `GEMINI_API_KEY` (or `OPENAI_API_KEY`) enables LLM extraction
+for *raw, unstructured* documents; see below.)
 
 ---
 
@@ -43,7 +43,7 @@ unstructured* documents; see below.)
 python -m scripts.run_evals            # prints PASS/FAIL for all 12 cases
 python -m scripts.run_evals --report   # regenerates docs/EVAL_REPORT.md
 
-pytest -q                              # 36 tests
+pytest -q                              # 54 tests
 pytest --cov=app -q                    # ~90% coverage
 ```
 
@@ -87,7 +87,8 @@ app/
   models.py            Pydantic contracts (validated I/O)
   policy.py            typed read-only accessors over policy_terms.json
   trace.py             observability accumulator
-  llm.py               optional Claude extraction adapter (schema-validated)
+  llm.py               optional Gemini→OpenAI extraction adapter (schema-validated)
+  agents/perception.py reads uploaded document images into structured fields
   agents/
     document_verification.py   the early-stop gate
     extraction.py              async document → fields
@@ -96,7 +97,7 @@ app/
   static/index.html    decision-review console (zero external deps)
 docs/                  architecture, contracts, eval report
 scripts/run_evals.py   runs all 12 cases, writes the eval report
-tests/                 36 tests (unit + integration + full eval)
+tests/                 54 tests (unit + integration + full eval)
 ```
 
 ---
