@@ -6,7 +6,7 @@ Adjudication never touches an LLM — money decisions stay deterministic.
 
 Extraction runs a resilience chain:
 
-    Gemini 2.0 Flash (primary)
+    Gemini 2.5 Flash (primary)
         ├─ retry with exponential backoff on transient failure
         └─ on exhaustion, FAIL OVER to →
     OpenAI (fallback)
@@ -34,12 +34,17 @@ from typing import Any, Awaitable, Callable, Optional
 
 from pydantic import BaseModel
 
-GEMINI_MODEL = os.environ.get("CLAIMS_LLM_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.environ.get("CLAIMS_LLM_MODEL", "gemini-2.5-flash")
 OPENAI_MODEL = os.environ.get("CLAIMS_OPENAI_MODEL", "gpt-4o-mini")
 
 # Failover tuning (overridable via env; tests set backoff to 0).
 _MAX_RETRIES = int(os.environ.get("CLAIMS_LLM_RETRIES", "2"))
 _BACKOFF_BASE = float(os.environ.get("CLAIMS_LLM_BACKOFF", "0.5"))
+
+
+class _LineItem(BaseModel):
+    description: str = ""
+    amount: float = 0.0
 
 
 class _Fields(BaseModel):
@@ -53,7 +58,7 @@ class _Fields(BaseModel):
     hospital_name: Optional[str] = None
     total: Optional[float] = None
     date: Optional[str] = None
-    line_items: list[dict[str, Any]] = []
+    line_items: list[_LineItem] = []
     tests_ordered: list[str] = []
     medicines: list[str] = []
     unreadable_fields: list[str] = []
