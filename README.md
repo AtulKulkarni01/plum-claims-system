@@ -43,8 +43,8 @@ for *raw, unstructured* documents; see below.)
 python -m scripts.run_evals            # prints PASS/FAIL for all 12 cases
 python -m scripts.run_evals --report   # regenerates docs/EVAL_REPORT.md
 
-pytest -q                              # 54 tests
-pytest --cov=app -q                    # ~90% coverage
+pytest -q                              # 79 tests
+pytest --cov=app -q                    # ~95% coverage
 ```
 
 ---
@@ -97,7 +97,7 @@ app/
   static/index.html    decision-review console (zero external deps)
 docs/                  architecture, contracts, eval report
 scripts/run_evals.py   runs all 12 cases, writes the eval report
-tests/                 54 tests (unit + integration + full eval)
+tests/                 79 tests (unit + integration + full eval)
 ```
 
 ---

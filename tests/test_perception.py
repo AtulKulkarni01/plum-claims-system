@@ -43,11 +43,13 @@ def test_perceive_reads_images_into_content(monkeypatch):
          "line_items": [{"description": "Consultation", "amount": 1500}],
          "total": 1500, "legible": True}))
     sub, trace = _image_claim(), Trace()
-    _run(perceive(sub, trace))
-    docs = {d.file_id: d for d in sub.documents}
+    enriched = _run(perceive(sub, trace))
+    docs = {d.file_id: d for d in enriched.documents}
     assert docs["IMG1"].content["diagnosis"] == "Viral Fever"
     assert docs["IMG1"].patient_name_on_doc == "Rajesh Kumar"
     assert any(s.step == "perception.read" for s in trace.steps)
+    # input submission is not mutated in place
+    assert all(d.content is None for d in sub.documents)
 
 
 def test_unreadable_image_is_flagged(monkeypatch):
@@ -55,8 +57,8 @@ def test_unreadable_image_is_flagged(monkeypatch):
     monkeypatch.setattr(perception_mod, "extract_fields",
                         _fake_reader({"legible": False}, {"legible": False}))
     sub, trace = _image_claim(), Trace()
-    _run(perceive(sub, trace))
-    assert all(d.quality == Quality.UNREADABLE for d in sub.documents)
+    enriched = _run(perceive(sub, trace))
+    assert all(d.quality == Quality.UNREADABLE for d in enriched.documents)
 
 
 def test_perceive_skips_when_no_provider(monkeypatch):

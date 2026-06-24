@@ -11,12 +11,12 @@ Endpoints
 from __future__ import annotations
 
 import json
-import os
+import logging
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import ValidationError
 
 from .llm import llm_available
 from .models import ClaimResult, ClaimSubmission
@@ -27,23 +27,14 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
 TEST_CASES_PATH = ROOT / "test_cases.json"
 
+# Pick up GEMINI_API_KEY / OPENAI_API_KEY from .env without a manual export
+# (does not override variables already set in the environment).
+load_dotenv(ROOT / ".env", override=False)
 
-def _load_dotenv() -> None:
-    """Load .env into the environment (without overriding already-set vars) so the
-    web app picks up GEMINI_API_KEY / OPENAI_API_KEY without a manual export."""
-    env_path = ROOT / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        if val.strip():
-            os.environ.setdefault(key.strip(), val.strip())
-
-
-_load_dotenv()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 app = FastAPI(
     title="Plum Claims Processing",
@@ -78,10 +69,7 @@ async def test_cases() -> JSONResponse:
 
 
 @app.post("/api/claims", response_model=ClaimResult)
-async def submit_claim(payload: dict) -> ClaimResult:
-    # Validate at the boundary; return a precise 422 on bad input.
-    try:
-        submission = ClaimSubmission.model_validate(payload)
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors())
+async def submit_claim(submission: ClaimSubmission) -> ClaimResult:
+    # FastAPI validates the body against ClaimSubmission and returns a precise
+    # 422 on bad input automatically; the OpenAPI schema is generated from it too.
     return await run_claim(submission)

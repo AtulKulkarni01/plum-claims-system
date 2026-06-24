@@ -18,6 +18,7 @@ from __future__ import annotations
 from ..models import (
     ClaimSubmission,
     DocumentIssue,
+    DocumentIssueCode,
     Quality,
     StepStatus,
 )
@@ -50,7 +51,7 @@ def verify_documents(
         missing_desc = ", ".join(_humanize(t) for t in missing)
         issues.append(
             DocumentIssue(
-                code="MISSING_REQUIRED_DOCUMENT",
+                code=DocumentIssueCode.MISSING_REQUIRED_DOCUMENT,
                 message=(
                     f"For a {category.lower()} claim we need: "
                     f"{', '.join(_humanize(t) for t in required)}. "
@@ -82,7 +83,7 @@ def verify_documents(
         label = _humanize(doc.actual_type.value)
         issues.append(
             DocumentIssue(
-                code="UNREADABLE_DOCUMENT",
+                code=DocumentIssueCode.UNREADABLE_DOCUMENT,
                 file_id=doc.file_id,
                 message=(
                     f"The {label} you uploaded "
@@ -121,7 +122,7 @@ def verify_documents(
         listing = "; ".join(f"{fid}: '{nm}'" for fid, nm in names.items())
         issues.append(
             DocumentIssue(
-                code="PATIENT_MISMATCH",
+                code=DocumentIssueCode.PATIENT_MISMATCH,
                 message=(
                     f"The uploaded documents name different patients ({listing}). "
                     f"All documents in one claim must belong to the same patient."

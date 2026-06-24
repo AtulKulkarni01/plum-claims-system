@@ -68,13 +68,15 @@ async def extract_claim(submission: ClaimSubmission, trace: Trace) -> ExtractedC
 
 ```python
 async def extract_fields(doc_type: str, raw_text: str | None = None,
-                         image_base64: str | None = None) -> dict
+                         image_base64: str | None = None,
+                         mime_type: str | None = None) -> ExtractionResult
 ```
 
-- **Input:** document type, and raw text and/or a base64 image.
-- **Output:** a dict matching the `_Fields` response schema (constrained by the Gemini API and re-validated with Pydantic).
-- **Model:** `gemini-2.5-flash` (override via `CLAIMS_LLM_MODEL`); key from `GEMINI_API_KEY` / `GOOGLE_API_KEY`.
-- **Raises:** `ExtractionError` if the key is missing, the SDK is absent, there is no payload, the network call fails, or the output fails validation. Callers must handle this and degrade.
+- **Input:** document type, raw text and/or a base64 image, and an optional `mime_type` (e.g. `image/png`, `application/pdf`) for the image payload.
+- **Output:** an `ExtractionResult { fields: dict, provider: str, attempts: list[str] }` — `fields` matches the `_Fields` response schema (constrained per provider and re-validated with Pydantic); `provider` is the provider that succeeded (`gemini`/`openai`); `attempts` logs each retry/failover.
+- **Models:** `gemini-2.5-flash` primary (override via `CLAIMS_LLM_MODEL`), `gpt-4o-mini` fallback (`CLAIMS_OPENAI_MODEL`); keys from `GEMINI_API_KEY`/`GOOGLE_API_KEY` and `OPENAI_API_KEY`.
+- **Resilience:** each attempt is bounded by `CLAIMS_LLM_TIMEOUT` (default 30s); retries with exponential backoff (`CLAIMS_LLM_RETRIES`/`CLAIMS_LLM_BACKOFF`), then fails over to the next provider.
+- **Raises:** `ExtractionError` only when there is no payload, no provider is configured, or every provider is exhausted (including timeouts). Callers must handle this and degrade.
 
 ---
 

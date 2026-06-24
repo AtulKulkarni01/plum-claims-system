@@ -10,7 +10,7 @@ exercise the pipeline's graceful-degradation path (see orchestrator).
 
 from __future__ import annotations
 
-from ..models import ClaimSubmission, FraudSignal, StepStatus
+from ..models import ClaimSubmission, FraudSeverity, FraudSignal, StepStatus
 from ..policy import Policy
 from ..trace import Trace
 
@@ -42,7 +42,7 @@ def detect_fraud(
                 f"(limit {limit}). Providers: "
                 f"{', '.join(h.provider or '?' for h in same_day)} + current."
             ),
-            severity="HIGH",
+            severity=FraudSeverity.HIGH,
         ))
 
     # monthly volume
@@ -56,7 +56,7 @@ def detect_fraud(
         signals.append(FraudSignal(
             code="MONTHLY_CLAIM_VOLUME",
             detail=f"{month_count} claims this month (limit {monthly_limit}).",
-            severity="MEDIUM",
+            severity=FraudSeverity.MEDIUM,
         ))
 
     # high-value claim
@@ -65,7 +65,7 @@ def detect_fraud(
         signals.append(FraudSignal(
             code="HIGH_VALUE_CLAIM",
             detail=f"Claimed ₹{submission.claimed_amount:,.0f} exceeds ₹{hv:,.0f}.",
-            severity="HIGH",
+            severity=FraudSeverity.HIGH,
         ))
 
     # document-integrity signals from extracted content (populated by perception /
@@ -75,14 +75,14 @@ def detect_fraud(
         signals.append(FraudSignal(
             code="DOCUMENT_ALTERATION",
             detail="Altered/overwritten amount(s): " + "; ".join(alterations),
-            severity="HIGH",
+            severity=FraudSeverity.HIGH,
         ))
     stamps = [s for d in submission.documents for s in (d.content or {}).get("duplicate_stamps", [])]
     if stamps:
         signals.append(FraudSignal(
             code="DUPLICATE_STAMP",
             detail="Duplicate document stamp(s): " + "; ".join(stamps),
-            severity="MEDIUM",
+            severity=FraudSeverity.MEDIUM,
         ))
 
     status = StepStatus.WARN if signals else StepStatus.PASS

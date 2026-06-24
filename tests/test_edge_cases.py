@@ -87,6 +87,24 @@ def test_annual_limit_exhausted_rejects_cleanly(submit):
     assert result.approved_amount == 0.0
 
 
+def test_wrong_policy_id_is_flagged_for_manual_review(submit):
+    """A submission whose policy_id does not match the configured policy must be
+    flagged (not silently processed against whatever policy is loaded)."""
+    result = submit(_consult(policy_id="SOME_OTHER_POLICY"))
+    assert result.requires_manual_review
+    step = next(s for s in result.trace if s.step == "intake.policy")
+    assert step.status == StepStatus.WARN
+
+
+def test_adjudication_and_fraud_both_recorded_in_trace(submit):
+    """The parallel adjudication+fraud stage must merge both agents' steps into
+    the single claim trace."""
+    result = submit(_consult())
+    steps = {s.step for s in result.trace}
+    assert "adjudication.decision" in steps
+    assert "fraud.detection" in steps
+
+
 def test_total_not_double_counted_across_documents(submit):
     """A stray total on the prescription must not inflate the covered amount."""
     sub = _consult(documents=[

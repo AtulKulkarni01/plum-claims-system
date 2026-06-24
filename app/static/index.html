@@ -131,6 +131,7 @@
   .s-FAIL, .s-ERROR { background: oklch(95% 0.06 25); color: var(--red); }
   .s-WARN { background: oklch(95% 0.07 75); color: var(--orange); }
   .s-INFO, .s-SKIP { background: var(--line); color: var(--muted); }
+  .tstep .cdelta { font-size: 0.66rem; font-weight: 700; color: #b45309; margin-left: 8px; vertical-align: middle; }
   .tstep .det { font-size: 0.83rem; color: var(--muted); margin-top: 3px; }
   .tstep .data { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
   .issue { padding: 12px 14px; border-radius: 8px; background: oklch(97% 0.03 50); border: 1px solid oklch(88% 0.06 50); margin-bottom: 10px; }
@@ -361,8 +362,9 @@ function render(r) {
     ${r.trace.map(s=>`<div class="tstep">
       <span class="dot d-${s.status}"></span>
       <span class="name">${esc(s.step)}</span><span class="stat s-${s.status}">${s.status}</span>
+      ${s.confidence_delta ? `<span class="cdelta">confidence ${s.confidence_delta>0?'+':''}${s.confidence_delta.toFixed(2)}</span>`:''}
       <div class="det">${esc(s.detail)}</div>
-      ${Object.keys(s.data||{}).length ? `<div class="data">${esc(JSON.stringify(s.data))}</div>`:''}
+      ${Object.keys(s.data||{}).length ? `<div class="data">${esc(JSON.stringify(s.data, null, 2))}</div>`:''}
     </div>`).join('')}
   </div></div>`;
 

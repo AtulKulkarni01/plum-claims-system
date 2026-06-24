@@ -13,6 +13,8 @@ result and trace. Two design commitments live here:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 from typing import Callable, Optional, TypeVar
 
@@ -25,7 +27,8 @@ from .models import (
     ClaimResult,
     ClaimSubmission,
     Decision,
-    ExtractedClaim,
+    ExtractionSource,
+    FraudSeverity,
     FraudSignal,
     ResultStatus,
     StepStatus,
@@ -33,10 +36,13 @@ from .models import (
 from .policy import Policy, get_policy
 from .trace import Trace
 
+logger = logging.getLogger(__name__)
+
 T = TypeVar("T")
 
 BASE_CONFIDENCE = 0.95
 COMPONENT_FAILURE_PENALTY = -0.35
+MANUAL_REVIEW_PENALTY = -0.1  # a routed-to-human claim is, by definition, less certain
 
 
 def _safe(
@@ -46,6 +52,7 @@ def _safe(
     try:
         return fn(), False
     except Exception as exc:  # noqa: BLE001 - resilience is the whole point
+        logger.error("Component '%s' failed and was skipped: %s", step, exc, exc_info=True)
         trace.add(
             step,
             StepStatus.ERROR,
@@ -62,6 +69,9 @@ async def run_claim(
     policy = policy or get_policy()
     trace = Trace()
     claim_id = f"CLM_{uuid.uuid4().hex[:10]}"
+    logger.info("Claim %s intake: member=%s category=%s amount=%s",
+                claim_id, submission.member_id, submission.claim_category.value,
+                submission.claimed_amount)
 
     result = ClaimResult(
         claim_id=claim_id,
@@ -71,6 +81,19 @@ async def run_claim(
         currency=policy.currency,
         claimed_amount=submission.claimed_amount,
     )
+
+    # The submitted policy_id must match the policy this system is configured with.
+    if submission.policy_id != policy.policy_id:
+        trace.add("intake.policy", StepStatus.WARN,
+                  f"Submitted policy_id '{submission.policy_id}' does not match the "
+                  f"configured policy '{policy.policy_id}'",
+                  {"submitted": submission.policy_id, "configured": policy.policy_id},
+                  confidence_delta=-0.2)
+        result.requires_manual_review = True
+    else:
+        trace.add("intake.policy", StepStatus.PASS,
+                  f"Policy {policy.policy_id} resolved",
+                  {"policy_id": policy.policy_id})
 
     member = policy.get_member(submission.member_id)
     if member:
@@ -84,7 +107,8 @@ async def run_claim(
         result.requires_manual_review = True # if member is not found in the roster, we need to manually review the claim
 
     # perception - read any uploaded document images into structured fields first
-    await perceive(submission, trace)
+    # (returns a new submission with enriched documents; input is not mutated)
+    submission = await perceive(submission, trace)
 
     # verification gate - may stop the pipeline for faulty / missing documents
     issues = verify_documents(submission, policy, trace)
@@ -103,26 +127,31 @@ async def run_claim(
 
     # a document we could not read means we'd be deciding on unverified data ->
     # flag for a human rather than silently trusting the claimed amount
-    if any(d.source == "DEGRADED" for d in extracted.documents):
+    if any(d.source == ExtractionSource.DEGRADED for d in extracted.documents):
         result.degraded = True
         result.requires_manual_review = True
 
-    # adjudication - apply policy rules (coverage, exclusions, waiting periods, pre-auth, limits) and compute the payout
+    # Adjudication and fraud detection are independent, so run them concurrently.
+    # Each writes to its OWN trace (Trace is not concurrency-safe), then we merge
+    # in a stable order so the combined trace reads adjudication-then-fraud.
+    adj_trace, fraud_trace = Trace(), Trace()
     fallback = AdjudicationOutcome(
         decision=Decision.MANUAL_REVIEW, reasons=["ADJUDICATION_FAILED"],
         messages=["Adjudication could not complete; routed to manual review."])
-    outcome, adj_failed = _safe(
-        trace, "adjudication", lambda: adjudicate(submission, extracted, policy, trace),
-        fallback)
-    if adj_failed:
-        result.degraded = True
-        result.requires_manual_review = True
 
-    # fraud - the simulated-failure component
-    signals, fraud_failed = _safe(
-        trace, "fraud.detection", lambda: detect_fraud(submission, policy, trace), [])
+    (outcome, adj_failed), (signals, fraud_failed) = await asyncio.gather(
+        asyncio.to_thread(
+            _safe, adj_trace, "adjudication",
+            lambda: adjudicate(submission, extracted, policy, adj_trace), fallback),
+        asyncio.to_thread(
+            _safe, fraud_trace, "fraud.detection",
+            lambda: detect_fraud(submission, policy, fraud_trace), []),
+    )
+    trace.merge(adj_trace)
+    trace.merge(fraud_trace)
+
     result.fraud_signals = list(signals)
-    if fraud_failed:
+    if adj_failed or fraud_failed:
         result.degraded = True
         result.requires_manual_review = True
 
@@ -132,6 +161,9 @@ async def run_claim(
     result.confidence_score = round(
         min(max(BASE_CONFIDENCE + trace.total_confidence_delta(), 0.0), 1.0), 2)
     result.trace = trace.steps
+    logger.info("Claim %s decision=%s approved=%s confidence=%s",
+                claim_id, result.decision.value if result.decision else None,
+                result.approved_amount, result.confidence_score)
     return result
 
 
@@ -160,10 +192,13 @@ def _finalize(
             result.reasons.append(code)
         messages.append(message)
         result.approved_amount = None
-        trace.add("decision.route", StepStatus.WARN, detail, data)
+        # Routing to a human means the automated path was not conclusive — reflect
+        # that with a confidence penalty so MANUAL_REVIEW never reads as certain.
+        trace.add("decision.route", StepStatus.WARN, detail, data,
+                  confidence_delta=MANUAL_REVIEW_PENALTY)
 
     # HIGH fraud signals route a payable claim to manual review.
-    high = [s for s in signals if s.severity == "HIGH"]
+    high = [s for s in signals if s.severity == FraudSeverity.HIGH]
     if payable and high:
         result.reasons.extend(s.code for s in signals)
         route(None,
