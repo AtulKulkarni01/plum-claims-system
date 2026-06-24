@@ -10,7 +10,7 @@ import app.agents.extraction as extraction_mod
 import app.llm as llm
 from app.agents.extraction import extract_claim
 from app.llm import ExtractionError, ExtractionResult, extract_fields, parse_json_fields
-from app.models import ClaimSubmission
+from app.models import ClaimSubmission, ExtractionSource
 from app.trace import Trace
 
 
@@ -116,6 +116,7 @@ def test_extraction_records_provider_and_failover_in_trace(monkeypatch):
     })
     trace = Trace()
     extracted = _run(extract_claim(sub, trace))
-    assert extracted.documents[0].source == "LLM:openai"
+    assert extracted.documents[0].source == ExtractionSource.LLM
+    assert extracted.documents[0].provider == "openai"
     llm_steps = [s for s in trace.steps if s.step == "extraction.llm"]
     assert llm_steps and llm_steps[0].data["failover_log"]

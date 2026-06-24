@@ -40,6 +40,9 @@ OPENAI_MODEL = os.environ.get("CLAIMS_OPENAI_MODEL", "gpt-4o-mini")
 # Failover tuning (overridable via env; tests set backoff to 0).
 _MAX_RETRIES = int(os.environ.get("CLAIMS_LLM_RETRIES", "2"))
 _BACKOFF_BASE = float(os.environ.get("CLAIMS_LLM_BACKOFF", "0.5"))
+# Per-attempt wall-clock cap: a provider that hangs must not block the request
+# forever (retry/failover only fires on a raised error, never on a hung socket).
+_TIMEOUT = float(os.environ.get("CLAIMS_LLM_TIMEOUT", "30"))
 
 
 class _LineItem(BaseModel):
@@ -190,7 +193,7 @@ async def _openai_extract(
             "image_url": {"url": f"data:{mime_type or 'image/jpeg'};base64,{image_base64}"},
         })
     try:
-        resp = await client.chat.completions.create(
+        resp = await client.chat.completions.create(  # type: ignore[call-overload]
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": content}],
             response_format={"type": "json_object"},
@@ -254,10 +257,13 @@ async def extract_fields(
     for name, fn in chain:
         for attempt in range(_MAX_RETRIES):
             try:
-                fields = await fn(doc_type, raw_text, image_base64, mime_type)
+                fields = await asyncio.wait_for(
+                    fn(doc_type, raw_text, image_base64, mime_type), timeout=_TIMEOUT)
                 return ExtractionResult(fields=fields, provider=name, attempts=attempts)
-            except ExtractionError as exc:
-                attempts.append(f"{name} attempt {attempt + 1}/{_MAX_RETRIES} failed: {exc}")
+            except (ExtractionError, asyncio.TimeoutError) as exc:
+                reason = (f"timed out after {_TIMEOUT:.0f}s"
+                          if isinstance(exc, asyncio.TimeoutError) else str(exc))
+                attempts.append(f"{name} attempt {attempt + 1}/{_MAX_RETRIES} failed: {reason}")
                 if attempt + 1 < _MAX_RETRIES:
                     await asyncio.sleep(_BACKOFF_BASE * (2 ** attempt))
         # provider exhausted -> fall over to the next one in the chain

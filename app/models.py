@@ -66,6 +66,31 @@ class StepStatus(str, Enum):
     ERROR = "ERROR"
 
 
+class ExtractionSource(str, Enum):
+    """Where a document's structured fields came from."""
+
+    PROVIDED = "PROVIDED"   # already-structured content (eval harness / JSON)
+    LLM = "LLM"             # read by the vision/text LLM (see ExtractedDocument.provider)
+    DEGRADED = "DEGRADED"   # could not be extracted; pipeline continues degraded
+
+
+class LineItemStatus(str, Enum):
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
+class FraudSeverity(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class DocumentIssueCode(str, Enum):
+    MISSING_REQUIRED_DOCUMENT = "MISSING_REQUIRED_DOCUMENT"
+    UNREADABLE_DOCUMENT = "UNREADABLE_DOCUMENT"
+    PATIENT_MISMATCH = "PATIENT_MISMATCH"
+
+
 class LineItem(BaseModel):
     description: str
     amount: float
@@ -134,7 +159,7 @@ class TraceStep(BaseModel):
 # Document-issue (early-stop) models
 # --------------------------------------------------------------------------- #
 class DocumentIssue(BaseModel):
-    code: str  # MISSING_REQUIRED_DOCUMENT | UNREADABLE_DOCUMENT | PATIENT_MISMATCH
+    code: DocumentIssueCode
     file_id: Optional[str] = None
     message: str  # specific, member-facing
     action_required: str  # exactly what the member should do next
@@ -146,7 +171,8 @@ class DocumentIssue(BaseModel):
 class ExtractedDocument(BaseModel):
     file_id: str
     doc_type: DocumentType
-    source: str  # PROVIDED | LLM | DEGRADED
+    source: ExtractionSource
+    provider: Optional[str] = None  # which LLM provider, when source == LLM
     patient_name: Optional[str] = None
     doctor_name: Optional[str] = None
     doctor_registration: Optional[str] = None
@@ -187,7 +213,7 @@ class LineItemResult(BaseModel):
     description: str
     claimed_amount: float
     approved_amount: float
-    status: str  # APPROVED | REJECTED
+    status: LineItemStatus
     reason: Optional[str] = None
 
 
@@ -199,7 +225,7 @@ class CalculationStep(BaseModel):
 class FraudSignal(BaseModel):
     code: str
     detail: str
-    severity: str  # LOW | MEDIUM | HIGH
+    severity: FraudSeverity
 
 
 class ClaimResult(BaseModel):

@@ -15,12 +15,13 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from ..llm import ExtractionError, extract_fields, llm_available, parse_json_fields
+from ..llm import extract_fields, llm_available, parse_json_fields
 from ..models import (
     ClaimSubmission,
     DocumentType,
     ExtractedClaim,
     ExtractedDocument,
+    ExtractionSource,
     InputDocument,
     LineItem,
     StepStatus,
@@ -39,12 +40,18 @@ def _line_items(raw: Any) -> list[LineItem]:
     return items
 
 
-def _from_content(doc: InputDocument, content: dict[str, Any], source: str) -> ExtractedDocument:
+def _from_content(
+    doc: InputDocument,
+    content: dict[str, Any],
+    source: ExtractionSource,
+    provider: str | None = None,
+) -> ExtractedDocument:
     registration = content.get("doctor_registration")
     return ExtractedDocument(
         file_id=doc.file_id,
         doc_type=doc.actual_type,
         source=source,
+        provider=provider,
         patient_name=content.get("patient_name") or doc.patient_name_on_doc,
         doctor_name=content.get("doctor_name"),
         doctor_registration=registration,
@@ -68,13 +75,13 @@ async def _extract_one(doc: InputDocument) -> ExtractedDocument:
     # `is not None` so a doc already read by the perception stage (even to an empty
     # dict) is used as-is and not sent to the LLM a second time.
     if doc.content is not None:
-        return _from_content(doc, doc.content, "PROVIDED")
+        return _from_content(doc, doc.content, ExtractionSource.PROVIDED)
 
     raw = doc.text
     if raw:
         as_json = parse_json_fields(raw)
         if as_json is not None:
-            return _from_content(doc, as_json, "PROVIDED")
+            return _from_content(doc, as_json, ExtractionSource.PROVIDED)
 
     # Raw text and/or an image plus an available model -> LLM extraction
     # (Gemini primary, OpenAI fallback, with retry/backoff inside extract_fields).
@@ -83,7 +90,7 @@ async def _extract_one(doc: InputDocument) -> ExtractedDocument:
             doc.actual_type.value, raw_text=raw, image_base64=doc.image_base64,
             mime_type=doc.mime_type,
         )
-        ed = _from_content(doc, res.fields, f"LLM:{res.provider}")
+        ed = _from_content(doc, res.fields, ExtractionSource.LLM, provider=res.provider)
         ed.warnings.extend(res.attempts)  # record any retries / failovers
         return ed
 
@@ -91,7 +98,7 @@ async def _extract_one(doc: InputDocument) -> ExtractedDocument:
     return ExtractedDocument(
         file_id=doc.file_id,
         doc_type=doc.actual_type,
-        source="DEGRADED",
+        source=ExtractionSource.DEGRADED,
         patient_name=doc.patient_name_on_doc,
         warnings=["no structured content and no extractor available"],
     )
@@ -116,17 +123,18 @@ async def extract_claim(
                 confidence_delta=-0.15,
             )
             return ExtractedDocument(
-                file_id=doc.file_id, doc_type=doc.actual_type, source="DEGRADED",
+                file_id=doc.file_id, doc_type=doc.actual_type,
+                source=ExtractionSource.DEGRADED,
                 warnings=[f"extraction error: {exc}"],
             )
         # Surface which LLM provider was used and any failover/retry in the trace.
-        if ed.source.startswith("LLM"):
+        if ed.source == ExtractionSource.LLM:
             trace.add(
                 "extraction.llm",
                 StepStatus.WARN if ed.warnings else StepStatus.PASS,
-                f"{doc.file_id}: extracted via {ed.source}"
+                f"{doc.file_id}: extracted via {ed.provider}"
                 + (" after retry/failover" if ed.warnings else ""),
-                {"file_id": doc.file_id, "provider": ed.source,
+                {"file_id": doc.file_id, "provider": ed.provider,
                  "failover_log": ed.warnings},
             )
         return ed
@@ -152,7 +160,7 @@ async def extract_claim(
         if d.total is not None and d.doc_type in bill_types:
             merged.total = (merged.total or 0) + d.total
 
-    degraded = [d.file_id for d in docs if d.source == "DEGRADED"]
+    degraded = [d.file_id for d in docs if d.source == ExtractionSource.DEGRADED]
     status = StepStatus.WARN if degraded else StepStatus.PASS
     trace.add(
         "extraction.summary",
@@ -160,7 +168,7 @@ async def extract_claim(
         f"Extracted {len(docs)} document(s)"
         + (f"; degraded: {degraded}" if degraded else ""),
         {
-            "sources": {d.file_id: d.source for d in docs},
+            "sources": {d.file_id: d.source.value for d in docs},
             "diagnosis": merged.diagnosis,
             "line_item_count": len(merged.line_items),
         },

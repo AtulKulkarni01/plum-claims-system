@@ -17,6 +17,10 @@ from typing import Any, Optional
 _DEFAULT_POLICY_PATH = Path(__file__).resolve().parent.parent / "policy_terms.json"
 
 
+class PolicyLoadError(RuntimeError):
+    """Raised when the policy file is missing, unreadable, or malformed."""
+
+
 def _parse_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
 
@@ -31,9 +35,17 @@ class Policy:
     
     @classmethod
     def from_file(cls, path: str | Path | None = None) -> "Policy":
-        path = Path(path or os.environ.get("CLAIMS_POLICY_PATH", _DEFAULT_POLICY_PATH))
-        with open(path, "r", encoding="utf-8") as fh:
-            return cls(json.load(fh))
+        resolved = Path(path or os.environ.get("CLAIMS_POLICY_PATH") or _DEFAULT_POLICY_PATH)
+        try:
+            with open(resolved, "r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except FileNotFoundError as exc:
+            raise PolicyLoadError(f"Policy file not found: {resolved}") from exc
+        except json.JSONDecodeError as exc:
+            raise PolicyLoadError(f"Policy file {resolved} is not valid JSON: {exc}") from exc
+        if "policy_id" not in raw:
+            raise PolicyLoadError(f"Policy file {resolved} is missing 'policy_id'")
+        return cls(raw)
 
     @property
     def policy_id(self) -> str:
@@ -46,13 +58,23 @@ class Policy:
     def get_member(self, member_id: str) -> Optional[dict[str, Any]]:
         return self._members_by_id.get(member_id)
 
-    def member_join_date(self, member_id: str) -> Optional[date]:
+    def member_join_date(
+        self, member_id: str, _visited: Optional[set[str]] = None
+    ) -> Optional[date]:
+        # _visited guards against cyclic primary_member_id chains (A -> B -> A)
+        # in a malformed policy file, which would otherwise recurse forever.
+        if _visited is None:
+            _visited = set()
+        if member_id in _visited:
+            return None
+        _visited.add(member_id)
+
         member = self.get_member(member_id)
         if member and member.get("join_date"):
             return _parse_date(member["join_date"])
         # dependents inherit the primary member's join date
         if member and member.get("primary_member_id"):
-            return self.member_join_date(member["primary_member_id"])
+            return self.member_join_date(member["primary_member_id"], _visited)
         return None
 
     @property

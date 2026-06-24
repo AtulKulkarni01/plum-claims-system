@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.models import ClaimResult, ClaimSubmission, Decision, ResultStatus  # noqa: E402
+from app.models import ClaimResult, ClaimSubmission, ResultStatus  # noqa: E402
 from app.orchestrator import run_claim  # noqa: E402
 
 TEST_CASES_PATH = ROOT / "test_cases.json"
@@ -30,11 +30,8 @@ def load_cases() -> list[dict]:
 
 def _confidence_ok(expected: str, actual: float) -> bool:
     # expected like "above 0.85"
-    try:
-        threshold = float(expected.lower().replace("above", "").strip())
-        return actual > threshold
-    except ValueError:
-        return True
+    threshold = float(expected.lower().replace("above", "").strip())
+    return actual > threshold
 
 
 def evaluate(case: dict, result: ClaimResult) -> tuple[bool, list[str]]:
@@ -49,8 +46,12 @@ def evaluate(case: dict, result: ClaimResult) -> tuple[bool, list[str]]:
             ok = False
             notes.append(f"expected early document stop, got status={result.status.value}")
         else:
-            codes = {i.code for i in result.document_issues}
+            codes = {i.code.value for i in result.document_issues}
             notes.append(f"document issue codes: {sorted(codes)}")
+            # The message must be specific and actionable, not generic/empty.
+            if not result.document_issues or len(result.member_message.strip()) < 20:
+                ok = False
+                notes.append("member message is missing or too generic")
         return ok, notes
 
     # Decision cases.
@@ -123,7 +124,10 @@ def _fmt_result(result: ClaimResult) -> str:
                      + "; ".join(f"{s.code} ({s.severity})" for s in result.fraud_signals))
     lines.append("- **Trace:**")
     for s in result.trace:
-        lines.append(f"    - [{s.status.value}] `{s.step}` — {s.detail}")
+        delta = f" _(confidence {s.confidence_delta:+.2f})_" if s.confidence_delta else ""
+        lines.append(f"    - [{s.status.value}] `{s.step}` — {s.detail}{delta}")
+        if s.data:
+            lines.append(f"        - data: `{json.dumps(s.data, default=str)}`")
     return "\n".join(lines)
 
 

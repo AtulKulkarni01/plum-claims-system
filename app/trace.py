@@ -32,6 +32,11 @@ class Trace:
         self._steps.append(entry)
         return entry
 
+    def merge(self, other: "Trace") -> None:
+        """Append another trace's steps onto this one (used after agents that
+        run concurrently each write to their own trace)."""
+        self._steps.extend(other._steps)
+
     @property
     def steps(self) -> list[TraceStep]:
         return list(self._steps)  # copy: callers must not mutate internal state

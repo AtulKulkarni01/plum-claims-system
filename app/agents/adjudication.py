@@ -18,7 +18,7 @@ link free-text diagnoses to policy keys live here.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from pydantic import BaseModel, Field
@@ -30,6 +30,7 @@ from ..models import (
     ExtractedClaim,
     LineItem,
     LineItemResult,
+    LineItemStatus,
     StepStatus,
 )
 from ..policy import Policy
@@ -264,12 +265,12 @@ def adjudicate(
             excluded_count += 1
             line_results.append(LineItemResult(
                 description=li.description, claimed_amount=li.amount,
-                approved_amount=0.0, status="REJECTED", reason=reason))
+                approved_amount=0.0, status=LineItemStatus.REJECTED, reason=reason))
         else:
             covered_total += li.amount
             line_results.append(LineItemResult(
                 description=li.description, claimed_amount=li.amount,
-                approved_amount=li.amount, status="APPROVED"))
+                approved_amount=li.amount, status=LineItemStatus.APPROVED))
 
     if not items:
         covered_total = extracted.total if extracted.total is not None else claimed

@@ -18,8 +18,8 @@ def test_network_discount_applied_before_copay(submit, test_cases):
     assert result.approved_amount == 3240  # 4500 *0.8 (network) *0.9 (copay)
     labels = [c.label for c in result.calculation]
     # network discount must appear before the co-pay step
-    net_idx = next(i for i, l in enumerate(labels) if "Network discount" in l)
-    copay_idx = next(i for i, l in enumerate(labels) if "Co-pay" in l)
+    net_idx = next(i for i, lbl in enumerate(labels) if "Network discount" in lbl)
+    copay_idx = next(i for i, lbl in enumerate(labels) if "Co-pay" in lbl)
     assert net_idx < copay_idx
 
 
