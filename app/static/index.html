@@ -70,6 +70,8 @@
   .doc-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .doc-row .fn { flex: 1; font-size: 0.78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-row select { padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 0.78rem; }
+  .doc-row .u-rm { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 8px; width: 28px; height: 28px; cursor: pointer; font-size: 0.8rem; line-height: 1; flex: none; }
+  .doc-row .u-rm:hover { color: var(--orange); border-color: var(--orange); }
   .u-note { font-size: 0.76rem; margin-top: 12px; padding: 10px 12px; border-radius: 8px; }
   .u-note.warn { background: oklch(96% 0.05 50); color: var(--orange); border: 1px solid oklch(88% 0.06 50); }
 
@@ -177,7 +179,7 @@
       </div>
       <div class="label">Hospital (optional)</div>
       <input id="u_hospital" class="u-in" placeholder="e.g. Apollo Hospitals">
-      <div class="label">Documents (images or PDF)</div>
+      <div class="label">Documents (images or PDF) — add one at a time or select several</div>
       <input id="u_files" class="u-in" type="file" accept="image/*,application/pdf" multiple>
       <div id="u_rows"></div>
       <button class="run" id="uploadBtn">Read &amp; adjudicate →</button>
@@ -250,15 +252,36 @@ function setMode(upload) {
 $('#modeCase').addEventListener('click', () => setMode(false));
 $('#modeUpload').addEventListener('click', () => setMode(true));
 
-// ---- upload mode: a document-type dropdown per chosen file ----
+// ---- upload mode: add files one at a time; each keeps its own document type ----
 const DOC_TYPES = ['PRESCRIPTION','HOSPITAL_BILL','PHARMACY_BILL','LAB_REPORT','DIAGNOSTIC_REPORT','DISCHARGE_SUMMARY','DENTAL_REPORT'];
-$('#u_files').addEventListener('change', () => {
-  const files = $('#u_files').files;
-  $('#u_rows').innerHTML = Array.from(files).map((f, i) => `
+let picked = [];  // [{ file, type }] — accumulates across selections
+
+function guessType(name) {
+  const n = name.toLowerCase();
+  if (n.includes('pharmacy')) return 'PHARMACY_BILL';
+  if (n.includes('bill') || n.includes('invoice')) return 'HOSPITAL_BILL';
+  if (n.includes('lab')) return 'LAB_REPORT';
+  return 'PRESCRIPTION';
+}
+
+function renderPicked() {
+  $('#u_rows').innerHTML = picked.map((p, i) => `
     <div class="doc-row">
-      <span class="fn">${esc(f.name)}</span>
-      <select id="u_type_${i}">${DOC_TYPES.map(t => `<option value="${t}">${t.replace(/_/g,' ').toLowerCase()}</option>`).join('')}</select>
+      <span class="fn">${esc(p.file.name)}</span>
+      <select class="u-type" data-i="${i}">${DOC_TYPES.map(t =>
+        `<option value="${t}"${t === p.type ? ' selected' : ''}>${t.replace(/_/g,' ').toLowerCase()}</option>`).join('')}</select>
+      <button type="button" class="u-rm" data-i="${i}" title="Remove">✕</button>
     </div>`).join('');
+  $('#u_rows').querySelectorAll('.u-type').forEach(sel =>
+    sel.addEventListener('change', () => { picked[+sel.dataset.i].type = sel.value; }));
+  $('#u_rows').querySelectorAll('.u-rm').forEach(btn =>
+    btn.addEventListener('click', () => { picked.splice(+btn.dataset.i, 1); renderPicked(); }));
+}
+
+$('#u_files').addEventListener('change', () => {
+  for (const f of $('#u_files').files) picked.push({ file: f, type: guessType(f.name) });
+  $('#u_files').value = '';   // reset so selecting again ADDS files instead of replacing
+  renderPicked();
 });
 
 function fileToB64(file) {
@@ -270,16 +293,15 @@ function fileToB64(file) {
 }
 
 $('#uploadBtn').addEventListener('click', async () => {
-  const files = $('#u_files').files;
-  if (!files.length) { alert('Choose at least one document image.'); return; }
+  if (!picked.length) { alert('Add at least one document image.'); return; }
   const member = $('#u_member').value.trim();
   if (!member) { alert('Enter a member ID.'); return; }
   const docs = [];
-  for (let i = 0; i < files.length; i++) {
-    const b64 = await fileToB64(files[i]);
-    docs.push({ file_id: `U${i+1}`, file_name: files[i].name,
-                actual_type: document.querySelector(`#u_type_${i}`).value,
-                image_base64: b64, mime_type: files[i].type || 'image/jpeg' });
+  for (let i = 0; i < picked.length; i++) {
+    const b64 = await fileToB64(picked[i].file);
+    docs.push({ file_id: `U${i+1}`, file_name: picked[i].file.name,
+                actual_type: picked[i].type,
+                image_base64: b64, mime_type: picked[i].file.type || 'image/jpeg' });
   }
   const payload = {
     member_id: member, policy_id: 'PLUM_GHI_2024',
